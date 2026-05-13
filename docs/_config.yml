@@ -1,0 +1,40 @@
+title: Lift
+description: The lifting PHP micro-framework
+theme: minima
+url: https://lift-php.github.io
+baseurl: /lift
+
+nav:
+  - title: Home
+    url: /
+  - title: Installation
+    url: /installation
+  - title: Quick Start
+    url: /quickstart
+  - title: Routing
+    url: /routing
+  - title: DI Container
+    url: /container
+  - title: Middleware
+    url: /middleware
+  - title: Security Middleware
+    url: /security
+  - title: Request
+    url: /request
+  - title: Response
+    url: /response
+  - title: JWT
+    url: /jwt
+  - title: Cryptography
+    url: /crypto
+  - title: UUID & ULID
+    url: /uuid
+  - title: Queues
+    url: /queues
+  - title: JSON-RPC 2.0
+    url: /json-rpc
+  - title: Framework Comparison
+    url: /comparison
+
+plugins:
+  - jekyll-feed

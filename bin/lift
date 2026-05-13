@@ -1,0 +1,46 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// Locate the autoloader — works whether Lift is the root project or a dependency.
+$autoloaders = [
+    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../../../autoload.php',
+];
+
+$loaded = false;
+foreach ($autoloaders as $file) {
+    if (file_exists($file)) {
+        require $file;
+        $loaded = true;
+        break;
+    }
+}
+
+if (!$loaded) {
+    fwrite(STDERR, "Autoloader not found. Run 'composer install' first.\n");
+    exit(1);
+}
+
+use Lift\Console\Application;
+use Lift\Console\Commands\MakeCommand;
+use Lift\Console\Commands\ServeCommand;
+
+$cli = new Application('lift', '1.0.0');
+$cli->register(new ServeCommand());
+$cli->register(new MakeCommand('controller'));
+$cli->register(new MakeCommand('request'));
+$cli->register(new MakeCommand('resource'));
+$cli->register(new MakeCommand('model'));
+$cli->register(new MakeCommand('middleware'));
+
+// If the project has a lift.php bootstrap, load it so app-specific commands are registered.
+$bootstrap = getcwd() . '/lift.php';
+if (file_exists($bootstrap)) {
+    /** @var Application|null $app */
+    $app = $cli; // expose as $cli for the bootstrap file
+    require $bootstrap;
+}
+
+exit($cli->run());
