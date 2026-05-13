@@ -30,6 +30,7 @@ use Lift\Routing\Route;
 use Lift\Routing\RouteGroup;
 use Lift\Routing\Router;
 use Lift\Validation\ValidationException;
+use Lift\View\ViewFactory;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 
@@ -79,6 +80,7 @@ final class App
         $this->container->instance(Router::class, $this->router);
         $this->container->instance(App::class, $this);
         $this->container->instance(Config::class, $this->config);
+        $this->container->singleton(ViewFactory::class, fn() => new ViewFactory(getcwd() . '/views'));
 
         // Default queue driver — sync (executes immediately in current process)
         $this->container->singleton(QueueInterface::class, fn() => new SyncQueue());
@@ -324,6 +326,22 @@ final class App
     public function environment(): string
     {
         return (string) Env::get('APP_ENV', $this->config->get('app.env', 'production'));
+    }
+
+    /** Configure and return the view factory. */
+    public function views(?string $path = null, string $extension = 'php', string $assetBase = '/assets'): ViewFactory
+    {
+        if ($path !== null) {
+            $this->container->instance(ViewFactory::class, new ViewFactory($path, $extension, $assetBase));
+        }
+
+        return $this->container->make(ViewFactory::class);
+    }
+
+    /** Render a view into an HTML response. */
+    public function view(string $view, array $data = [], ?string $layout = null, int $status = 200): Response
+    {
+        return $this->views()->response($view, $data, $layout, $status);
     }
 
     // -----------------------------------------------------------------

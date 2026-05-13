@@ -68,6 +68,43 @@ final class UserResource extends JsonResource
 return new UserResource($user);
 ```
 
+## Views
+
+Lift includes a small PHP view renderer with layouts, sections, partials,
+shared parameters, escaping, and asset URLs.
+
+```php
+$app->views(__DIR__ . '/../views', assetBase: '/assets');
+$app->views()->share('appName', 'Lift Blog');
+
+$app->get('/', fn() => $app->view('posts.index', [
+    'posts' => $posts,
+]));
+```
+
+View files receive a `$view` helper:
+
+```php
+<?php $view->layout('layouts.app'); ?>
+
+<?php $view->section('title'); ?>Posts<?php $view->end(); ?>
+
+<link rel="stylesheet" href="<?= $view->asset('app.css') ?>">
+
+<?php foreach ($posts as $post): ?>
+    <?= $view->include('posts.card', ['post' => $post]) ?>
+<?php endforeach; ?>
+```
+
+Layout:
+
+```php
+<title><?= $view->yield('title', 'Lift') ?></title>
+<main><?= $view->content() ?></main>
+```
+
+Use `$view->e($value)` for HTML escaping.
+
 ## Sessions
 
 Use `SessionMiddleware` to start a driver-backed session and expose a `Session` object on the request.
