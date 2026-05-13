@@ -27,6 +27,10 @@ final class DebugCollector
     private array $exceptions = [];
     /** @var list<array<string, mixed>> */
     private array $phpErrors = [];
+    /** @var list<array{sql: string, bindings: array<mixed>, time_ms: float}> */
+    private array $queries = [];
+    /** @var list<array{level: string, message: string, context: array<mixed>}> */
+    private array $logs = [];
 
     /** Create a collector using masking rules from debug configuration. */
     public function __construct(private readonly DebugConfig $config) {}
@@ -37,10 +41,12 @@ final class DebugCollector
     public function start(Request $request): void
     {
         $this->startedAt = microtime(true);
-        $this->request = $request;
-        $this->response = null;
+        $this->request   = $request;
+        $this->response  = null;
         $this->exceptions = [];
-        $this->phpErrors = [];
+        $this->phpErrors  = [];
+        $this->queries    = [];
+        $this->logs       = [];
     }
 
     /** Store the final response for the current request. */
@@ -58,6 +64,27 @@ final class DebugCollector
             'file' => $e->getFile(),
             'line' => $e->getLine(),
         ];
+    }
+
+    /**
+     * Record an executed SQL query.
+     *
+     * Wire this to a {@see Connection::onQuery()} listener at bootstrap:
+     * ```php
+     * $db->onQuery([$collector, 'recordQuery']);
+     * ```
+     */
+    public function recordQuery(string $sql, array $bindings, float $timeMs): void
+    {
+        $this->queries[] = ['sql' => $sql, 'bindings' => $bindings, 'time_ms' => $timeMs];
+    }
+
+    /**
+     * Record a PSR-3 log entry.  Wire this via {@see DebugLogHandler}.
+     */
+    public function recordLog(string $level, string $message, array $context): void
+    {
+        $this->logs[] = ['level' => $level, 'message' => $message, 'context' => $context];
     }
 
     /** Record a PHP warning, notice, deprecation, or user-level error. */
@@ -79,12 +106,14 @@ final class DebugCollector
     public function data(): array
     {
         return [
-            'request' => $this->requestData(),
-            'response' => $this->responseData(),
+            'request'     => $this->requestData(),
+            'response'    => $this->responseData(),
             'performance' => [
-                'duration_ms' => $this->startedAt === null ? 0.0 : round((microtime(true) - $this->startedAt) * 1000, 2),
+                'duration_ms'    => $this->startedAt === null ? 0.0 : round((microtime(true) - $this->startedAt) * 1000, 2),
                 'memory_peak_mb' => round(memory_get_peak_usage(true) / 1024 / 1024, 2),
             ],
+            'queries'    => $this->queries,
+            'logs'       => $this->logs,
             'exceptions' => $this->exceptions,
             'php_errors' => $this->phpErrors,
         ];

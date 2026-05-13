@@ -32,7 +32,7 @@ final class MigrateCommand extends Command
 
     public function execute(Input $input, Output $output): int
     {
-        $migrator = new Migrator($this->connection, getcwd() . '/' . trim($this->path, '/'));
+        $migrator = new Migrator($this->connection, str_starts_with($this->path, '/') ? $this->path : getcwd() . '/' . trim($this->path, '/'));
 
         if ($input->hasOption('sessions')) {
             $migrator->createSessionsTable();

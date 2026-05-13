@@ -34,6 +34,8 @@ final class Connection
 {
     private readonly PDO $pdo;
     private readonly Grammar $grammar;
+    /** @var list<callable(string, array<mixed>, float): void> */
+    private array $queryListeners = [];
 
     /**
      * @param string      $dsn      PDO data source name.
@@ -108,6 +110,22 @@ final class Connection
     // Query builder entry-point
     // -----------------------------------------------------------------
 
+    /**
+     * Register a listener called after every query with `($sql, $bindings, $ms)`.
+     *
+     * Useful for the debug toolbar, slow-query logging, or test assertions.
+     *
+     * ```php
+     * $db->onQuery(function (string $sql, array $bindings, float $ms): void {
+     *     $logger->debug('SQL', ['sql' => $sql, 'ms' => $ms]);
+     * });
+     * ```
+     */
+    public function onQuery(callable $listener): void
+    {
+        $this->queryListeners[] = $listener;
+    }
+
     /** Start a fluent query on the given table. */
     public function table(string $table): QueryBuilder
     {
@@ -125,9 +143,12 @@ final class Connection
      */
     public function select(string $sql, array $bindings = []): array
     {
+        $t    = microtime(true);
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($bindings);
-        return $stmt->fetchAll();
+        $rows = $stmt->fetchAll();
+        $this->notifyQuery($sql, $bindings, $t);
+        return $rows;
     }
 
     /**
@@ -137,9 +158,11 @@ final class Connection
      */
     public function selectOne(string $sql, array $bindings = []): ?array
     {
+        $t    = microtime(true);
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($bindings);
         $row  = $stmt->fetch();
+        $this->notifyQuery($sql, $bindings, $t);
         return $row === false ? null : $row;
     }
 
@@ -148,9 +171,11 @@ final class Connection
      */
     public function value(string $sql, array $bindings = []): mixed
     {
+        $t    = microtime(true);
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($bindings);
         $val  = $stmt->fetchColumn();
+        $this->notifyQuery($sql, $bindings, $t);
         return $val === false ? null : $val;
     }
 
@@ -159,8 +184,10 @@ final class Connection
      */
     public function execute(string $sql, array $bindings = []): int
     {
+        $t    = microtime(true);
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($bindings);
+        $this->notifyQuery($sql, $bindings, $t);
         return $stmt->rowCount();
     }
 
@@ -232,5 +259,16 @@ final class Connection
     public function getPdo(): PDO
     {
         return $this->pdo;
+    }
+
+    private function notifyQuery(string $sql, array $bindings, float $startedAt): void
+    {
+        if ($this->queryListeners === []) {
+            return;
+        }
+        $ms = round((microtime(true) - $startedAt) * 1000, 3);
+        foreach ($this->queryListeners as $listener) {
+            $listener($sql, $bindings, $ms);
+        }
     }
 }

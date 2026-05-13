@@ -565,6 +565,14 @@ final class App
             return Response::json(['errors' => $e->errors()], 422);
         }
 
+        if ($e instanceof \Lift\Exception\TooManyRequestsException) {
+            $response = Response::json(['error' => $e->getMessage()], 429);
+            if ($e->retryAfter !== null) {
+                $response = $response->withHeader('Retry-After', (string) $e->retryAfter);
+            }
+            return $response;
+        }
+
         if ($e instanceof HttpException) {
             return Response::json(['error' => $e->getMessage()], $e->getStatusCode());
         }

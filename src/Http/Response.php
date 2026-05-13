@@ -100,6 +100,77 @@ class Response extends Message implements ResponseInterface
         return $clone;
     }
 
+    /**
+     * Add a `Set-Cookie` header to the response.
+     *
+     * ```php
+     * return $response->withCookie('remember_token', $token, ['max_age' => 86400 * 30]);
+     * ```
+     *
+     * Supported `$options` keys:
+     * - `max_age`  (int)    — `Max-Age` in seconds.
+     * - `expires`  (int)    — Unix timestamp; ignored when `max_age` is set.
+     * - `path`     (string) — Cookie path. Default: `/`.
+     * - `domain`   (string) — Cookie domain.
+     * - `secure`   (bool)   — Add `Secure` flag.
+     * - `http_only`(bool)   — Add `HttpOnly` flag (default `true`).
+     * - `same_site`(string) — `Strict`, `Lax`, or `None` (default `Lax`).
+     *
+     * @param array<string, mixed> $options
+     */
+    public function withCookie(string $name, string $value, array $options = []): static
+    {
+        return $this->withAddedHeader('Set-Cookie', self::buildCookieHeader($name, $value, $options));
+    }
+
+    /**
+     * Expire a cookie by name, causing the browser to delete it.
+     *
+     * Sends an empty value with `Max-Age=0` and `Expires` in the past.
+     */
+    public function withoutCookie(string $name, string $path = '/'): static
+    {
+        $header = urlencode($name) . '=; Path=' . $path
+            . '; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; SameSite=Lax';
+        return $this->withAddedHeader('Set-Cookie', $header);
+    }
+
+    /**
+     * Build a single `Set-Cookie` header value string.
+     *
+     * @param array<string, mixed> $options
+     */
+    private static function buildCookieHeader(string $name, string $value, array $options): string
+    {
+        $parts = [urlencode($name) . '=' . urlencode($value)];
+        $parts[] = 'Path=' . ($options['path'] ?? '/');
+
+        if (isset($options['domain'])) {
+            $parts[] = 'Domain=' . $options['domain'];
+        }
+
+        if (isset($options['max_age'])) {
+            $parts[] = 'Max-Age=' . (int) $options['max_age'];
+        } elseif (isset($options['expires'])) {
+            $parts[] = 'Expires=' . gmdate('D, d M Y H:i:s T', (int) $options['expires']);
+        }
+
+        if ($options['http_only'] ?? true) {
+            $parts[] = 'HttpOnly';
+        }
+
+        $sameSite = $options['same_site'] ?? 'Lax';
+        if ($sameSite !== '') {
+            $parts[] = 'SameSite=' . $sameSite;
+        }
+
+        if ($options['secure'] ?? false) {
+            $parts[] = 'Secure';
+        }
+
+        return implode('; ', $parts);
+    }
+
     // -----------------------------------------------------------------
     // PSR-7 ResponseInterface
     // -----------------------------------------------------------------

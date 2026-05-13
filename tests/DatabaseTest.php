@@ -356,13 +356,18 @@ class DatabaseTest extends TestCase
         }
 
         $page = $this->db->table('users')->orderBy('id')->paginate(2, 3);
-        self::assertSame(10, $page['total']);
-        self::assertSame(3,  $page['per_page']);
-        self::assertSame(2,  $page['current_page']);
-        self::assertSame(4,  $page['last_page']);
-        self::assertSame(4,  $page['from']);
-        self::assertSame(6,  $page['to']);
-        self::assertCount(3, $page['data']);
+        self::assertSame(10, $page->total());
+        self::assertSame(3,  $page->perPage());
+        self::assertSame(2,  $page->currentPage());
+        self::assertSame(4,  $page->lastPage());
+        self::assertSame(4,  $page->from());
+        self::assertSame(6,  $page->to());
+        self::assertCount(3, $page->items());
+        self::assertTrue($page->hasMorePages());
+        // JsonSerializable envelope
+        $arr = $page->jsonSerialize();
+        self::assertSame(10, $arr['total']);
+        self::assertCount(3, $arr['data']);
     }
 
     // -----------------------------------------------------------------

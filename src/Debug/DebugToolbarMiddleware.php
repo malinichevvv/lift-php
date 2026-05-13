@@ -13,6 +13,20 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Throwable;
 
+/**
+ * PSR-15 middleware that injects the debug toolbar into HTML responses.
+ *
+ * When the debug mode is enabled and the response qualifies (HTML content-type,
+ * contains a `</body>` tag, and passes the {@see DebugConfig::shouldInject()} check)
+ * the rendered toolbar HTML is inserted immediately before `</body>`.
+ *
+ * When the response does not contain `</body>` (e.g., a partial fragment), the
+ * toolbar is appended to the end of the body.
+ *
+ * The middleware collects request/response/performance/error data via
+ * {@see DebugCollector} and renders it using {@see DebugToolbarRenderer}.
+ * Any exception thrown by the inner handler is recorded before being re-thrown.
+ */
 final class DebugToolbarMiddleware implements MiddlewareInterface
 {
     public function __construct(
@@ -21,6 +35,12 @@ final class DebugToolbarMiddleware implements MiddlewareInterface
         private readonly DebugToolbarRenderer $renderer,
     ) {}
 
+    /**
+     * Run the inner handler, collect telemetry, and inject the toolbar into HTML responses.
+     *
+     * Returns the response unchanged when debug mode is off or the response
+     * does not qualify for toolbar injection.
+     */
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         if (!$request instanceof Request || !$this->config->enabled()) {

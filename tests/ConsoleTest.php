@@ -6,8 +6,16 @@ namespace Lift\Tests;
 
 use Lift\Console\Application;
 use Lift\Console\Command;
+use Lift\Console\Commands\KeyGenerateCommand;
+use Lift\Console\Commands\MakeCommand;
+use Lift\Console\Commands\MakeMigrationCommand;
+use Lift\Console\Commands\MigrateFreshCommand;
+use Lift\Console\Commands\MigrateResetCommand;
+use Lift\Console\Commands\MigrateRollbackCommand;
+use Lift\Console\Commands\MigrateStatusCommand;
 use Lift\Console\Input;
 use Lift\Console\Output;
+use Lift\Database\Connection;
 use PHPUnit\Framework\TestCase;
 
 // --- Stub command for testing ---
@@ -196,5 +204,237 @@ class ConsoleTest extends TestCase
         // When not a tty (injected stream), colour tags must be stripped
         self::assertStringNotContainsString('<green>', $out);
         self::assertStringContainsString('ok', $out);
+    }
+
+    // -----------------------------------------------------------------
+    // MakeMigrationCommand
+    // -----------------------------------------------------------------
+
+    public function testMakeMigrationCreatesTimestampedFile(): void
+    {
+        $dir = sys_get_temp_dir() . '/lift_mc_' . bin2hex(random_bytes(4));
+        $cmd = new MakeMigrationCommand();
+        $code = $cmd->execute(
+            new Input(['make:migration', 'create_items_table', '--path=' . $dir]),
+            new Output(fopen('php://memory', 'w'))
+        );
+        self::assertSame(0, $code);
+
+        $files = glob($dir . '/*.php') ?: [];
+        self::assertCount(1, $files);
+        self::assertMatchesRegularExpression('/\d{4}_\d{2}_\d{2}_\d{6}_create_items_table\.php$/', $files[0]);
+
+        $content = (string) file_get_contents($files[0]);
+        self::assertStringContainsString("->create('items'", $content);
+        self::assertStringContainsString('->id()', $content);
+
+        unlink($files[0]);
+        rmdir($dir);
+    }
+
+    public function testMakeMigrationAlterStub(): void
+    {
+        $dir = sys_get_temp_dir() . '/lift_mc_' . bin2hex(random_bytes(4));
+        $cmd = new MakeMigrationCommand();
+        $cmd->execute(
+            new Input(['make:migration', 'add_email_to_users', '--path=' . $dir]),
+            new Output(fopen('php://memory', 'w'))
+        );
+
+        $files = glob($dir . '/*.php') ?: [];
+        $content = (string) file_get_contents($files[0]);
+        self::assertStringContainsString("->alter('users'", $content);
+
+        unlink($files[0]);
+        rmdir($dir);
+    }
+
+    public function testMakeMigrationBlankStub(): void
+    {
+        $dir = sys_get_temp_dir() . '/lift_mc_' . bin2hex(random_bytes(4));
+        $cmd = new MakeMigrationCommand();
+        $cmd->execute(
+            new Input(['make:migration', 'tweak_something', '--path=' . $dir]),
+            new Output(fopen('php://memory', 'w'))
+        );
+
+        $files = glob($dir . '/*.php') ?: [];
+        $content = (string) file_get_contents($files[0]);
+        self::assertStringContainsString('extends Migration', $content);
+        self::assertStringNotContainsString("->create(", $content);
+
+        unlink($files[0]);
+        rmdir($dir);
+    }
+
+    public function testMakeMigrationRequiresName(): void
+    {
+        $stderr = fopen('php://memory', 'r+');
+        $code   = (new MakeMigrationCommand())->execute(
+            new Input(['make:migration']),
+            new Output(fopen('php://memory', 'w'), $stderr)
+        );
+        self::assertSame(1, $code);
+    }
+
+    // -----------------------------------------------------------------
+    // KeyGenerateCommand
+    // -----------------------------------------------------------------
+
+    public function testKeyGenerateCreatesEnvFile(): void
+    {
+        $file = sys_get_temp_dir() . '/lift_env_' . bin2hex(random_bytes(4));
+        $code = (new KeyGenerateCommand($file))->execute(
+            new Input(['key:generate']),
+            new Output(fopen('php://memory', 'w'))
+        );
+        self::assertSame(0, $code);
+        self::assertFileExists($file);
+        self::assertMatchesRegularExpression('/^APP_KEY=base64:.+$/m', (string) file_get_contents($file));
+        unlink($file);
+    }
+
+    public function testKeyGenerateReplacesExistingKey(): void
+    {
+        $file = sys_get_temp_dir() . '/lift_env_' . bin2hex(random_bytes(4));
+        file_put_contents($file, "APP_DEBUG=true\nAPP_KEY=base64:oldkey\nAPP_ENV=local\n");
+
+        (new KeyGenerateCommand($file))->execute(
+            new Input(['key:generate']),
+            new Output(fopen('php://memory', 'w'))
+        );
+
+        $contents = (string) file_get_contents($file);
+        self::assertStringNotContainsString('oldkey', $contents);
+        self::assertStringContainsString('APP_KEY=base64:', $contents);
+        self::assertStringContainsString('APP_DEBUG=true', $contents); // other lines preserved
+        unlink($file);
+    }
+
+    public function testKeyGenerateAppendsWhenKeyMissing(): void
+    {
+        $file = sys_get_temp_dir() . '/lift_env_' . bin2hex(random_bytes(4));
+        file_put_contents($file, "APP_DEBUG=true\n");
+
+        (new KeyGenerateCommand($file))->execute(
+            new Input(['key:generate']),
+            new Output(fopen('php://memory', 'w'))
+        );
+
+        $contents = (string) file_get_contents($file);
+        self::assertStringContainsString('APP_KEY=base64:', $contents);
+        self::assertStringContainsString('APP_DEBUG=true', $contents);
+        unlink($file);
+    }
+
+    // -----------------------------------------------------------------
+    // MakeCommand — new types
+    // -----------------------------------------------------------------
+
+    public function testMakeCommandType(): void
+    {
+        foreach (['command', 'job', 'test', 'event'] as $type) {
+            $dir  = sys_get_temp_dir() . '/lift_make_' . bin2hex(random_bytes(4));
+            $cmd  = new MakeCommand($type);
+            $code = $cmd->execute(
+                new Input(['make:' . $type, 'Sample', '--path=' . $dir]),
+                new Output(fopen('php://memory', 'w'))
+            );
+            self::assertSame(0, $code, "make:{$type} should exit 0");
+            $files = glob($dir . '/**/*.php', GLOB_BRACE) ?: glob($dir . '/*.php') ?: [];
+            // glob recursively to handle nested namespace dirs
+            $all = [];
+            $it  = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir));
+            foreach ($it as $f) {
+                if ($f instanceof \SplFileInfo && $f->isFile()) {
+                    $all[] = $f->getPathname();
+                }
+            }
+            self::assertCount(1, $all, "make:{$type} should create exactly one file");
+            self::assertStringContainsString('Sample', (string) file_get_contents($all[0]));
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Migrate commands (integration with SQLite)
+    // -----------------------------------------------------------------
+
+    private function migrationDir(): string
+    {
+        $dir = sys_get_temp_dir() . '/lift_cmd_migr_' . bin2hex(random_bytes(4));
+        mkdir($dir);
+
+        file_put_contents($dir . '/2026_01_01_000000_create_cmd_a.php', <<<'PHP'
+<?php
+use Lift\Database\Migration;
+return new class($db) extends Migration {
+    public function up(): void   { $this->db->execute('CREATE TABLE cmd_a (id INTEGER PRIMARY KEY)'); }
+    public function down(): void { $this->db->execute('DROP TABLE cmd_a'); }
+};
+PHP);
+
+        return $dir;
+    }
+
+    public function testMigrateRollbackCommand(): void
+    {
+        $dir = $this->migrationDir();
+        $db  = new Connection('sqlite::memory:');
+
+        $status = new MigrateStatusCommand($db, $dir);
+        $rollback = new MigrateRollbackCommand($db, $dir);
+
+        // Nothing to roll back yet
+        $code = $rollback->execute(new Input(['migrate:rollback']), new Output(fopen('php://memory', 'w')));
+        self::assertSame(0, $code);
+
+        // Migrate, then rollback
+        $db->execute('CREATE TABLE IF NOT EXISTS migrations (migration VARCHAR(255) PRIMARY KEY, batch INTEGER NOT NULL)');
+        $db->execute("INSERT INTO migrations (migration, batch) VALUES ('2026_01_01_000000_create_cmd_a', 1)");
+        $db->execute('CREATE TABLE cmd_a (id INTEGER PRIMARY KEY)');
+
+        $code = $rollback->execute(new Input(['migrate:rollback']), new Output(fopen('php://memory', 'w')));
+        self::assertSame(0, $code);
+    }
+
+    public function testMigrateStatusCommand(): void
+    {
+        $dir = $this->migrationDir();
+        $db  = new Connection('sqlite::memory:');
+        $cmd = new MigrateStatusCommand($db, $dir);
+
+        $out  = fopen('php://memory', 'r+');
+        $code = $cmd->execute(new Input(['migrate:status']), new Output($out));
+        self::assertSame(0, $code);
+
+        rewind($out);
+        $text = stream_get_contents($out);
+        self::assertStringContainsString('create_cmd_a', (string) $text);
+        self::assertStringContainsString('No', (string) $text); // not run yet
+    }
+
+    public function testMigrateResetCommandOnEmptyDb(): void
+    {
+        $dir = $this->migrationDir();
+        $db  = new Connection('sqlite::memory:');
+        $cmd = new MigrateResetCommand($db, $dir);
+
+        $code = $cmd->execute(new Input(['migrate:reset']), new Output(fopen('php://memory', 'w')));
+        self::assertSame(0, $code);
+    }
+
+    public function testMigrateFreshCommand(): void
+    {
+        $dir = $this->migrationDir();
+        $db  = new Connection('sqlite::memory:');
+        $cmd = new MigrateFreshCommand($db, $dir);
+
+        $out  = fopen('php://memory', 'r+');
+        $code = $cmd->execute(new Input(['migrate:fresh']), new Output($out));
+        self::assertSame(0, $code);
+
+        // After fresh on empty db, migration should have run
+        $count = $db->table('cmd_a')->count();
+        self::assertSame(0, $count); // table exists and is empty
     }
 }

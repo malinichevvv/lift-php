@@ -17,7 +17,7 @@ use Lift\Console\Output;
  */
 final class MakeCommand extends Command
 {
-    /** @param 'controller'|'request'|'resource'|'model'|'middleware' $type */
+    /** @param 'controller'|'request'|'resource'|'model'|'middleware'|'command'|'job'|'test'|'event' $type */
     public function __construct(private readonly string $type) {}
 
     public function getName(): string
@@ -67,10 +67,14 @@ final class MakeCommand extends Command
     {
         return match ($this->type) {
             'controller' => 'App\\Http\\Controllers',
-            'request' => 'App\\Http\\Requests',
-            'resource' => 'App\\Http\\Resources',
-            'model' => 'App\\Models',
+            'request'    => 'App\\Http\\Requests',
+            'resource'   => 'App\\Http\\Resources',
+            'model'      => 'App\\Models',
             'middleware' => 'App\\Http\\Middleware',
+            'command'    => 'App\\Console\\Commands',
+            'job'        => 'App\\Jobs',
+            'test'       => 'Tests',
+            'event'      => 'App\\Events',
         };
     }
 
@@ -84,10 +88,14 @@ final class MakeCommand extends Command
     {
         return match ($this->type) {
             'controller' => $this->controllerStub($namespace, $class),
-            'request' => $this->requestStub($namespace, $class),
-            'resource' => $this->resourceStub($namespace, $class),
-            'model' => $this->modelStub($namespace, $class),
+            'request'    => $this->requestStub($namespace, $class),
+            'resource'   => $this->resourceStub($namespace, $class),
+            'model'      => $this->modelStub($namespace, $class),
             'middleware' => $this->middlewareStub($namespace, $class),
+            'command'    => $this->commandStub($namespace, $class),
+            'job'        => $this->jobStub($namespace, $class),
+            'test'       => $this->testStub($namespace, $class),
+            'event'      => $this->eventStub($namespace, $class),
         };
     }
 
@@ -200,6 +208,94 @@ final class {$class} implements MiddlewareInterface
     {
         return \$handler->handle(\$request);
     }
+}
+PHP;
+    }
+
+    private function commandStub(string $namespace, string $class): string
+    {
+        $name = strtolower((string) preg_replace('/(?<!^)[A-Z]/', '-$0', str_replace('Command', '', $class)));
+        return <<<PHP
+<?php
+
+declare(strict_types=1);
+
+namespace {$namespace};
+
+use Lift\Console\Command;
+use Lift\Console\Input;
+use Lift\Console\Output;
+
+final class {$class} extends Command
+{
+    public function getName(): string        { return 'app:{$name}'; }
+    public function getDescription(): string { return 'Description of {$class}'; }
+
+    public function execute(Input \$input, Output \$output): int
+    {
+        \$output->success('Done!');
+        return 0;
+    }
+}
+PHP;
+    }
+
+    private function jobStub(string $namespace, string $class): string
+    {
+        return <<<PHP
+<?php
+
+declare(strict_types=1);
+
+namespace {$namespace};
+
+use Lift\Queue\AbstractJob;
+
+final class {$class} extends AbstractJob
+{
+    public function handle(): void
+    {
+        //
+    }
+}
+PHP;
+    }
+
+    private function testStub(string $namespace, string $class): string
+    {
+        return <<<PHP
+<?php
+
+declare(strict_types=1);
+
+namespace {$namespace};
+
+use Lift\Testing\TestCase;
+
+final class {$class} extends TestCase
+{
+    public function testExample(): void
+    {
+        \$this->assertTrue(true);
+    }
+}
+PHP;
+    }
+
+    private function eventStub(string $namespace, string $class): string
+    {
+        return <<<PHP
+<?php
+
+declare(strict_types=1);
+
+namespace {$namespace};
+
+final class {$class}
+{
+    public function __construct(
+        // public readonly Type \$property,
+    ) {}
 }
 PHP;
     }

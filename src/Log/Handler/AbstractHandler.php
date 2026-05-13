@@ -8,6 +8,23 @@ use Lift\Log\Formatter\FormatterInterface;
 use Lift\Log\Formatter\LineFormatter;
 use Psr\Log\LogLevel;
 
+/**
+ * Abstract base for log handlers.
+ *
+ * Provides level-threshold filtering (via a numeric priority map) and formatter
+ * wiring.  Concrete handlers only need to implement {@see write()} — all
+ * formatting and level checking is handled here.
+ *
+ * ```php
+ * final class SyslogHandler extends AbstractHandler
+ * {
+ *     protected function write(string $formatted): void
+ *     {
+ *         syslog(LOG_INFO, rtrim($formatted));
+ *     }
+ * }
+ * ```
+ */
 abstract class AbstractHandler implements HandlerInterface
 {
     private const LEVELS = [

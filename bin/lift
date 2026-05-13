@@ -24,16 +24,28 @@ if (!$loaded) {
 }
 
 use Lift\Console\Application;
+use Lift\Console\Commands\KeyGenerateCommand;
 use Lift\Console\Commands\MakeCommand;
+use Lift\Console\Commands\MakeMigrationCommand;
 use Lift\Console\Commands\ServeCommand;
 
 $cli = new Application('lift', '1.0.0');
 $cli->register(new ServeCommand());
+
+// make:* scaffolding — no dependencies, available everywhere
 $cli->register(new MakeCommand('controller'));
 $cli->register(new MakeCommand('request'));
 $cli->register(new MakeCommand('resource'));
 $cli->register(new MakeCommand('model'));
 $cli->register(new MakeCommand('middleware'));
+$cli->register(new MakeCommand('command'));
+$cli->register(new MakeCommand('job'));
+$cli->register(new MakeCommand('test'));
+$cli->register(new MakeCommand('event'));
+$cli->register(new MakeMigrationCommand());
+
+// utilities
+$cli->register(new KeyGenerateCommand());
 
 // If the project has a lift.php bootstrap, load it so app-specific commands are registered.
 $bootstrap = getcwd() . '/lift.php';

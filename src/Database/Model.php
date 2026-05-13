@@ -6,6 +6,13 @@ namespace Lift\Database;
 
 use ArrayAccess;
 use JsonSerializable;
+use Lift\Database\Events\ModelCreated;
+use Lift\Database\Events\ModelCreating;
+use Lift\Database\Events\ModelDeleted;
+use Lift\Database\Events\ModelDeleting;
+use Lift\Database\Events\ModelUpdated;
+use Lift\Database\Events\ModelUpdating;
+use Lift\Events\EventDispatcher;
 
 /**
  * Lightweight active-record style base model.
@@ -31,6 +38,9 @@ abstract class Model implements ArrayAccess, JsonSerializable
     protected static ?Connection $connection = null;
     protected static string $table = '';
     protected static string $primaryKey = 'id';
+
+    /** Shared PSR-14-compatible dispatcher for all model classes. */
+    protected static ?EventDispatcher $dispatcher = null;
     /** @var list<string> */
     protected array $fillable = [];
     /** @var array<string, mixed> */
@@ -49,6 +59,22 @@ abstract class Model implements ArrayAccess, JsonSerializable
     public static function setConnection(Connection $connection): void
     {
         static::$connection = $connection;
+    }
+
+    /**
+     * Set the shared event dispatcher used for model lifecycle events.
+     *
+     * When configured, `save()` and `delete()` fire `ModelCreating` / `ModelCreated`
+     * (or `ModelUpdating` / `ModelUpdated`) and `ModelDeleting` / `ModelDeleted` events.
+     * Stoppable `*ing` events can cancel the operation by calling `stopPropagation()`.
+     *
+     * ```php
+     * Model::setEventDispatcher($app->events());
+     * ```
+     */
+    public static function setEventDispatcher(EventDispatcher $dispatcher): void
+    {
+        static::$dispatcher = $dispatcher;
     }
 
     /** Start a query for this model's table. */
@@ -84,6 +110,33 @@ abstract class Model implements ArrayAccess, JsonSerializable
         $model->original = $attributes;
         $model->exists = true;
         return $model;
+    }
+
+    /**
+     * Dispatch a local scope defined as `scope{Name}(QueryBuilder $q): void` on the model.
+     *
+     * ```php
+     * // In the model:
+     * public function scopeActive(QueryBuilder $query): void
+     * {
+     *     $query->where('active', 1);
+     * }
+     *
+     * // Usage:
+     * User::active()->where('role', 'admin')->get();
+     * ```
+     */
+    public static function __callStatic(string $name, array $arguments): mixed
+    {
+        $scope = 'scope' . ucfirst($name);
+        if (method_exists(static::class, $scope)) {
+            $query = static::query();
+            (new static())->$scope($query, ...$arguments);
+            return $query;
+        }
+        throw new \BadMethodCallException(
+            sprintf('Call to undefined static method %s::%s().', static::class, $name)
+        );
     }
 
     /** Return the database table name for the model. */
@@ -129,9 +182,30 @@ abstract class Model implements ArrayAccess, JsonSerializable
             if ($dirty === []) {
                 return true;
             }
+
+            if (self::$dispatcher !== null) {
+                $event = new ModelUpdating($this);
+                self::$dispatcher->dispatch($event);
+                if ($event->isPropagationStopped()) {
+                    return false;
+                }
+            }
+
             static::query()->where(static::$primaryKey, $this->getKey())->update($dirty);
             $this->syncOriginal();
+
+            if (self::$dispatcher !== null) {
+                self::$dispatcher->dispatch(new ModelUpdated($this));
+            }
             return true;
+        }
+
+        if (self::$dispatcher !== null) {
+            $event = new ModelCreating($this);
+            self::$dispatcher->dispatch($event);
+            if ($event->isPropagationStopped()) {
+                return false;
+            }
         }
 
         $id = static::query()->insert($this->attributes);
@@ -140,6 +214,10 @@ abstract class Model implements ArrayAccess, JsonSerializable
         }
         $this->exists = true;
         $this->syncOriginal();
+
+        if (self::$dispatcher !== null) {
+            self::$dispatcher->dispatch(new ModelCreated($this));
+        }
         return true;
     }
 
@@ -149,8 +227,21 @@ abstract class Model implements ArrayAccess, JsonSerializable
         if (!$this->exists) {
             return false;
         }
+
+        if (self::$dispatcher !== null) {
+            $event = new ModelDeleting($this);
+            self::$dispatcher->dispatch($event);
+            if ($event->isPropagationStopped()) {
+                return false;
+            }
+        }
+
         static::query()->where(static::$primaryKey, $this->getKey())->delete();
         $this->exists = false;
+
+        if (self::$dispatcher !== null) {
+            self::$dispatcher->dispatch(new ModelDeleted($this));
+        }
         return true;
     }
 
@@ -158,6 +249,99 @@ abstract class Model implements ArrayAccess, JsonSerializable
     public function getKey(): mixed
     {
         return $this->get(static::$primaryKey);
+    }
+
+    // -----------------------------------------------------------------
+    // Relationships
+    // -----------------------------------------------------------------
+
+    /**
+     * Define a one-to-many relationship: this model's PK → child model's FK.
+     *
+     * ```php
+     * // In User model
+     * public function posts(): array
+     * {
+     *     return $this->hasMany(Post::class);
+     *     // SELECT * FROM posts WHERE user_id = {$this->id}
+     * }
+     * ```
+     *
+     * @template T of Model
+     * @param  class-string<T> $related     Fully-qualified related model class name.
+     * @param  string|null     $foreignKey  FK column on the related table (default: `{snake_class}_id`).
+     * @param  string|null     $localKey    PK column on this model (default: `static::$primaryKey`).
+     * @return T[]
+     */
+    public function hasMany(string $related, ?string $foreignKey = null, ?string $localKey = null): array
+    {
+        $fk  = $foreignKey ?? $this->guessForeignKey();
+        $lk  = $localKey ?? static::$primaryKey;
+        $rows = $related::query()->where($fk, $this->get($lk))->get();
+        return array_map(fn($row) => $related::hydrate($row), $rows);
+    }
+
+    /**
+     * Define a one-to-one relationship: this model's PK → child model's FK.
+     *
+     * ```php
+     * public function profile(): ?Profile
+     * {
+     *     return $this->hasOne(Profile::class);
+     *     // SELECT * FROM profiles WHERE user_id = {$this->id} LIMIT 1
+     * }
+     * ```
+     *
+     * @template T of Model
+     * @param  class-string<T> $related
+     * @param  string|null     $foreignKey  FK column on the related table.
+     * @param  string|null     $localKey    PK column on this model.
+     * @return T|null
+     */
+    public function hasOne(string $related, ?string $foreignKey = null, ?string $localKey = null): ?Model
+    {
+        $fk  = $foreignKey ?? $this->guessForeignKey();
+        $lk  = $localKey ?? static::$primaryKey;
+        $row = $related::query()->where($fk, $this->get($lk))->first();
+        return $row === null ? null : $related::hydrate($row);
+    }
+
+    /**
+     * Define an inverse relationship: this model's FK → parent model's PK.
+     *
+     * ```php
+     * // In Post model
+     * public function user(): ?User
+     * {
+     *     return $this->belongsTo(User::class);
+     *     // SELECT * FROM users WHERE id = {$this->user_id} LIMIT 1
+     * }
+     * ```
+     *
+     * @template T of Model
+     * @param  class-string<T> $related     Fully-qualified parent model class name.
+     * @param  string|null     $foreignKey  FK column on THIS model (default: `{snake_related_class}_id`).
+     * @param  string|null     $ownerKey    PK column on the parent model (default: `id`).
+     * @return T|null
+     */
+    public function belongsTo(string $related, ?string $foreignKey = null, ?string $ownerKey = null): ?Model
+    {
+        $short = basename(str_replace('\\', '/', $related));
+        $fk    = $foreignKey ?? strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $short)) . '_id';
+        $ok    = $ownerKey ?? 'id';
+        $row   = $related::query()->where($ok, $this->get($fk))->first();
+        return $row === null ? null : $related::hydrate($row);
+    }
+
+    /**
+     * Derive the conventional foreign-key name for this model.
+     *
+     * `App\Models\BlogPost` → `blog_post_id`
+     */
+    private function guessForeignKey(): string
+    {
+        $short = basename(str_replace('\\', '/', static::class));
+        return strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $short)) . '_id';
     }
 
     /** Return changed attributes since hydration or last save. */

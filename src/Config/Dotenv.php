@@ -4,20 +4,51 @@ declare(strict_types=1);
 
 namespace Lift\Config;
 
-/** Dependency-free .env loader compatible with common KEY=value files. */
+/**
+ * Dependency-free `.env` file loader.
+ *
+ * Parses a file containing `KEY=value` declarations and populates `$_ENV`,
+ * `$_SERVER`, and `putenv()`.  Supports:
+ * - Quoted values (`"double"` and `'single'`) — double-quoted strings have
+ *   C-style escape sequences processed via `stripcslashes()`.
+ * - `export KEY=value` lines (the `export` keyword is stripped).
+ * - Inline comments: everything after ` #` on an unquoted value is ignored.
+ * - Blank lines and lines starting with `#` are skipped.
+ *
+ * By default, existing environment variables are **not** overwritten.
+ * Set `$overwrite = true` to force re-assignment.
+ *
+ * ```php
+ * Dotenv::load(__DIR__ . '/../.env');
+ * ```
+ */
 final class Dotenv
 {
+    /**
+     * @param string $path      Absolute path to the `.env` file.
+     * @param bool   $overwrite When `true`, existing env vars are overwritten.
+     */
     public function __construct(
         private readonly string $path,
         private readonly bool $overwrite = false,
     ) {}
 
+    /**
+     * Static convenience wrapper — construct, parse, and load in one call.
+     *
+     * @return array<string, string> Map of variable names to loaded values.
+     */
     public static function load(string $path, bool $overwrite = false): array
     {
         return (new self($path, $overwrite))->parseAndLoad();
     }
 
-    /** @return array<string, string> */
+    /**
+     * Parse the `.env` file and populate the PHP environment superglobals.
+     *
+     * @return array<string, string> Map of variable names that were actually set.
+     * @throws \InvalidArgumentException When the file is not readable.
+     */
     public function parseAndLoad(): array
     {
         if (!is_file($this->path) || !is_readable($this->path)) {

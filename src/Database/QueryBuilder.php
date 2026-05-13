@@ -337,21 +337,29 @@ final class QueryBuilder
      *
      * @return array{data: array, total: int, per_page: int, current_page: int, last_page: int, from: int, to: int}
      */
-    public function paginate(int $page = 1, int $perPage = 15): array
+    /**
+     * Execute the query and return a {@see Paginator} for the given page.
+     *
+     * The total row count is fetched with a separate `COUNT(*)` query.
+     *
+     * ```php
+     * $page = $db->table('posts')
+     *     ->where('published', 1)
+     *     ->orderBy('created_at', 'DESC')
+     *     ->paginate(page: 2, perPage: 10, path: '/posts');
+     *
+     * return Response::json($page); // auto-serialises to pagination envelope
+     * ```
+     *
+     * @param string $path  Base URL used by {@see Paginator::links()} for generating `<a href>` tags.
+     */
+    public function paginate(int $page = 1, int $perPage = 15, string $path = ''): Paginator
     {
         $page    = max(1, $page);
         $total   = $this->count();
-        $results = $this->limit($perPage)->offset(($page - 1) * $perPage)->get();
+        $items   = $this->limit($perPage)->offset(($page - 1) * $perPage)->get();
 
-        return [
-            'data'         => $results,
-            'total'        => $total,
-            'per_page'     => $perPage,
-            'current_page' => $page,
-            'last_page'    => (int) ceil($total / max(1, $perPage)),
-            'from'         => $total > 0 ? ($page - 1) * $perPage + 1 : 0,
-            'to'           => min($page * $perPage, $total),
-        ];
+        return new Paginator($items, $total, $perPage, $page, $path);
     }
 
     /**

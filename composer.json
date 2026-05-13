@@ -33,11 +33,13 @@
     "bin": ["bin/lift"],
     "scripts": {
         "test": "phpunit",
-        "analyse": "phpstan analyse src --level=8"
+        "analyse": "phpstan analyse src --level=8",
+        "lift": "@php vendor/bin/lift"
     },
     "suggest": {
         "ext-redis": "Required for RedisClient, RedisCache, and RedisQueue drivers.",
-        "ext-pcntl": "Enables graceful SIGTERM/SIGINT handling in the queue Worker."
+        "ext-pcntl": "Enables graceful SIGTERM/SIGINT handling in the queue Worker.",
+        "php-amqplib/php-amqplib": "Required for AmqpQueue (RabbitMQ driver). Install: composer require php-amqplib/php-amqplib \"^3.0\""
     },
     "minimum-stability": "stable",
     "prefer-stable": true

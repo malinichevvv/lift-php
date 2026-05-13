@@ -112,8 +112,9 @@ final class Concurrent
      * Run a single callable inside a Fiber and return its result.
      *
      * @template T
-     * @param  callable(): T $task
+     * @param callable(): T $task
      * @return T
+     * @throws \Throwable
      */
     public static function run(callable $task): mixed
     {
