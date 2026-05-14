@@ -41,8 +41,17 @@ abstract class Model implements ArrayAccess, JsonSerializable
 
     /** Shared PSR-14-compatible dispatcher for all model classes. */
     protected static ?EventDispatcher $dispatcher = null;
-    /** @var list<string> */
+    /** @var list<string> Explicit allow-list of mass-assignable attributes. When non-empty, only listed keys pass `fill()`. */
     protected array $fillable = [];
+    /**
+     * @var list<string> Deny-list of attributes that are never mass-assignable.
+     *
+     * Checked only when `$fillable` is empty. Typical usage:
+     * ```php
+     * protected array $guarded = ['id', 'is_admin'];
+     * ```
+     */
+    protected array $guarded = [];
     /** @var array<string, mixed> */
     protected array $attributes = [];
     /** @var array<string, mixed> */
@@ -389,7 +398,13 @@ abstract class Model implements ArrayAccess, JsonSerializable
 
     private function isFillable(string $key): bool
     {
-        return $this->fillable === [] || in_array($key, $this->fillable, true);
+        if ($this->fillable !== []) {
+            return in_array($key, $this->fillable, true);
+        }
+        if ($this->guarded !== []) {
+            return !in_array($key, $this->guarded, true);
+        }
+        return true;
     }
 
     private function syncOriginal(): void

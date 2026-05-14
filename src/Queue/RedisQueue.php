@@ -30,9 +30,19 @@ use Lift\Redis\RedisClientInterface;
  */
 final class RedisQueue implements QueueInterface
 {
+    use SerializesJobs;
+
+    /**
+     * @param RedisClientInterface $redis
+     * @param string $prefix  Redis key prefix.
+     * @param string $secret  When non-empty, queue payloads are HMAC-signed (SHA-256).
+     *                        Use the same secret on all workers. Prevents RCE via
+     *                        deserialization of tampered payloads in a compromised Redis.
+     */
     public function __construct(
         private readonly RedisClientInterface $redis,
         private readonly string $prefix = 'lift',
+        private readonly string $secret = '',
     ) {}
 
     /**
@@ -46,8 +56,8 @@ final class RedisQueue implements QueueInterface
             return $this->later($job->getDelay(), $job);
         }
 
-        $id      = $this->generateId();
-        $payload = $this->serialise($job, $id);
+        $id      = $this->generateJobId('redis');
+        $payload = $this->serialiseJob($job, $id);
         $this->redis->lPush($this->key($job->getQueue()), $payload);
         return $id;
     }
@@ -55,8 +65,8 @@ final class RedisQueue implements QueueInterface
     /** {@inheritdoc} */
     public function later(int $delay, JobInterface $job): string
     {
-        $id       = $this->generateId();
-        $payload  = $this->serialise($job, $id);
+        $id       = $this->generateJobId('redis');
+        $payload  = $this->serialiseJob($job, $id);
         $readyAt  = time() + $delay;
         $this->redis->zAdd($this->delayedKey($job->getQueue()), (float) $readyAt, $payload);
         return $id;
@@ -76,7 +86,7 @@ final class RedisQueue implements QueueInterface
             return null;
         }
 
-        return $this->deserialise($raw);
+        return $this->deserialiseJob($raw);
     }
 
     /** {@inheritdoc} */
@@ -121,50 +131,4 @@ final class RedisQueue implements QueueInterface
         return "{$this->prefix}:queue:{$queue}:delayed";
     }
 
-    /**
-     * Serialise a job to a storable JSON string.
-     *
-     * @throws \RuntimeException On serialisation failure.
-     */
-    private function serialise(JobInterface $job, string $id): string
-    {
-        $data = json_encode([
-            'id'      => $id,
-            'class'   => $job::class,
-            'payload' => serialize($job),
-            'tries'   => $job->getTries(),
-            'pushedAt' => time(),
-        ]);
-
-        if ($data === false) {
-            throw new \RuntimeException('Failed to serialise job: ' . json_last_error_msg());
-        }
-
-        return $data;
-    }
-
-    /**
-     * Deserialise a raw JSON string back to a {@see JobInterface}.
-     *
-     * @throws \RuntimeException On deserialisation failure.
-     */
-    private function deserialise(string $raw): JobInterface
-    {
-        $data = json_decode($raw, true);
-        if (!is_array($data) || !isset($data['payload'])) {
-            throw new \RuntimeException("Corrupted queue payload: {$raw}");
-        }
-
-        $job = unserialize($data['payload']);
-        if (!$job instanceof JobInterface) {
-            throw new \RuntimeException("Deserialised payload is not a JobInterface: {$data['class']}");
-        }
-
-        return $job;
-    }
-
-    private function generateId(): string
-    {
-        return 'redis_' . bin2hex(random_bytes(8));
-    }
 }

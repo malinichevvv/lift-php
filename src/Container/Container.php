@@ -181,6 +181,23 @@ final class Container implements ContainerInterface
     {
         $args = [];
 
+        // Pre-index override objects by every class/interface they satisfy,
+        // so the inner loop below becomes a single O(1) lookup instead of
+        // an O(overrides) instanceof scan for each parameter.
+        $overridesByType = [];
+        foreach ($overrides as $override) {
+            if (!is_object($override)) {
+                continue;
+            }
+            $overridesByType[get_class($override)] = $override;
+            foreach (class_parents($override) as $parent) {
+                $overridesByType[$parent] ??= $override;
+            }
+            foreach (class_implements($override) as $iface) {
+                $overridesByType[$iface] ??= $override;
+            }
+        }
+
         foreach ($params as $param) {
             $name = $param->getName();
             $type = $param->getType();
@@ -191,16 +208,13 @@ final class Container implements ContainerInterface
                 continue;
             }
 
-            // 2. Named type → check overrides by instanceof, then autowire
+            // 2. Named type → check pre-built type map, then autowire
             if ($type instanceof ReflectionNamedType && !$type->isBuiltin()) {
                 $typeName = $type->getName();
 
-                // Check if any override value is an instance of the required type
-                foreach ($overrides as $override) {
-                    if ($override instanceof $typeName) {
-                        $args[] = $override;
-                        continue 2;
-                    }
+                if (isset($overridesByType[$typeName])) {
+                    $args[] = $overridesByType[$typeName];
+                    continue;
                 }
 
                 // Autowire from container

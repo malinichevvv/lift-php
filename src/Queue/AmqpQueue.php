@@ -38,6 +38,8 @@ namespace Lift\Queue;
  */
 final class AmqpQueue implements QueueInterface
 {
+    use SerializesJobs;
+
     /** @var array<string, mixed> */
     private readonly array $config;
 
@@ -50,13 +52,17 @@ final class AmqpQueue implements QueueInterface
     /** @var array<string, true> Tracks which queues have been declared. */
     private array $declared = [];
 
+    private readonly string $secret;
+
     /**
      * @param array<string, mixed> $config
      *   Required keys: host, port, user, password, vhost.
-     *   Optional:      exchange (default: ''), prefetch (default: 1).
+     *   Optional:      exchange (default: ''), prefetch (default: 1),
+     *                  secret (default: '') — HMAC signing key for payloads.
      */
     public function __construct(array $config = [])
     {
+        $this->secret = (string) ($config['secret'] ?? '');
         $this->config = array_merge([
             'host'     => 'localhost',
             'port'     => 5672,
@@ -77,8 +83,8 @@ final class AmqpQueue implements QueueInterface
             return $this->later($job->getDelay(), $job);
         }
 
-        $id      = $this->generateId();
-        $payload = $this->serialise($job, $id);
+        $id      = $this->generateJobId('amqp');
+        $payload = $this->serialiseJob($job, $id);
 
         $this->ensureQueue($job->getQueue());
 
@@ -97,8 +103,8 @@ final class AmqpQueue implements QueueInterface
     {
         $this->ensureLibrary();
 
-        $id         = $this->generateId();
-        $payload    = $this->serialise($job, $id);
+        $id         = $this->generateJobId('amqp');
+        $payload    = $this->serialiseJob($job, $id);
         $delayQueue = $job->getQueue() . '.delayed.' . $delay;
 
         $this->ensureQueue($job->getQueue());
@@ -126,7 +132,7 @@ final class AmqpQueue implements QueueInterface
             return null;
         }
 
-        $job = $this->deserialise($envelope->body);
+        $job = $this->deserialiseJob($envelope->body);
         $this->channel()->basic_ack($envelope->getDeliveryTag());
         return $job;
     }
@@ -217,42 +223,6 @@ final class AmqpQueue implements QueueInterface
         $this->declared[$delayQueue] = true;
     }
 
-    private function serialise(JobInterface $job, string $id): string
-    {
-        $data = json_encode([
-            'id'       => $id,
-            'class'    => $job::class,
-            'payload'  => serialize($job),
-            'tries'    => $job->getTries(),
-            'pushedAt' => time(),
-        ]);
-
-        if ($data === false) {
-            throw new \RuntimeException('Failed to serialise job: ' . json_last_error_msg());
-        }
-
-        return $data;
-    }
-
-    private function deserialise(string $raw): JobInterface
-    {
-        $data = json_decode($raw, true);
-        if (!is_array($data) || !isset($data['payload'])) {
-            throw new \RuntimeException("Corrupted queue payload: {$raw}");
-        }
-
-        $job = unserialize($data['payload']);
-        if (!$job instanceof JobInterface) {
-            throw new \RuntimeException("Deserialised payload is not a JobInterface: {$data['class']}");
-        }
-
-        return $job;
-    }
-
-    private function generateId(): string
-    {
-        return 'amqp_' . bin2hex(random_bytes(8));
-    }
 
     private function ensureLibrary(): void
     {

@@ -53,7 +53,7 @@ class Response extends Message implements ResponseInterface
         return new self(
             statusCode: $status,
             headers: ['Content-Type' => 'application/json; charset=utf-8'],
-            body: Stream::fromString((string) json_encode($data, $flags)),
+            body: Stream::fromString(json_encode($data, $flags | JSON_THROW_ON_ERROR)),
         );
     }
 
@@ -92,7 +92,7 @@ class Response extends Message implements ResponseInterface
     public function withJson(mixed $data, ?int $status = null): self
     {
         $clone = $this->withHeader('Content-Type', 'application/json; charset=utf-8')
-                      ->withBody(Stream::fromString((string) json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)));
+                      ->withBody(Stream::fromString(json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)));
         if ($status !== null) {
             $clone = $clone->withStatus($status);
         }

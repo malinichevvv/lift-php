@@ -47,7 +47,16 @@ final class Uri implements UriInterface
     public static function fromServer(array $server): self
     {
         $scheme = (!empty($server['HTTPS']) && $server['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host   = $server['HTTP_HOST'] ?? ($server['SERVER_NAME'] ?? 'localhost');
+
+        // Prefer HTTP_HOST for virtual-hosting, but sanitise it: reject null bytes,
+        // CR/LF (header injection), and any path/query fragment that shouldn't be there.
+        // Fall back to SERVER_NAME (set by the web-server config, not by the client).
+        $rawHost = (string) ($server['HTTP_HOST'] ?? ($server['SERVER_NAME'] ?? 'localhost'));
+        if (preg_match('/[\x00-\x1f\x7f\/\\\\?#@]/', $rawHost)) {
+            $rawHost = (string) ($server['SERVER_NAME'] ?? 'localhost');
+        }
+        $host = $rawHost;
+
         $port   = isset($server['SERVER_PORT']) ? (int) $server['SERVER_PORT'] : 80;
         $uri    = $server['REQUEST_URI'] ?? '/';
 

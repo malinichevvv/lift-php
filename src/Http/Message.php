@@ -54,29 +54,34 @@ abstract class Message implements MessageInterface
 
     public function withHeader(string $name, $value): static
     {
+        self::assertValidHeaderName($name);
+        $values = is_array($value) ? array_values($value) : [(string) $value];
+        array_walk($values, static fn(string $v) => self::assertValidHeaderValue($v));
+
         $clone  = clone $this;
         $lower  = strtolower($name);
         if (isset($clone->headerNames[$lower])) {
             unset($clone->headers[$clone->headerNames[$lower]]);
         }
         $clone->headerNames[$lower] = $name;
-        $clone->headers[$name]      = is_array($value) ? array_values($value) : [(string) $value];
+        $clone->headers[$name]      = $values;
         return $clone;
     }
 
     public function withAddedHeader(string $name, $value): static
     {
+        self::assertValidHeaderName($name);
+        $values = is_array($value) ? array_values($value) : [(string) $value];
+        array_walk($values, static fn(string $v) => self::assertValidHeaderValue($v));
+
         $clone = clone $this;
         $lower = strtolower($name);
         if (isset($clone->headerNames[$lower])) {
             $existing = $clone->headerNames[$lower];
-            $clone->headers[$existing] = array_merge(
-                $clone->headers[$existing],
-                is_array($value) ? array_values($value) : [(string) $value],
-            );
+            $clone->headers[$existing] = array_merge($clone->headers[$existing], $values);
         } else {
             $clone->headerNames[$lower] = $name;
-            $clone->headers[$name]      = is_array($value) ? array_values($value) : [(string) $value];
+            $clone->headers[$name]      = $values;
         }
         return $clone;
     }
@@ -106,9 +111,28 @@ abstract class Message implements MessageInterface
     protected function setHeaders(array $headers): void
     {
         foreach ($headers as $name => $value) {
+            self::assertValidHeaderName($name);
             $lower = strtolower($name);
             $this->headerNames[$lower] = $name;
-            $this->headers[$name]      = is_array($value) ? array_values($value) : [(string) $value];
+            $values = is_array($value) ? array_values($value) : [(string) $value];
+            array_walk($values, static fn(string $v) => self::assertValidHeaderValue($v));
+            $this->headers[$name] = $values;
+        }
+    }
+
+    private static function assertValidHeaderName(string $name): void
+    {
+        if ($name === '' || !preg_match('/^[a-zA-Z0-9\'`#$%&*+\-.^_|~!]+$/', $name)) {
+            throw new \InvalidArgumentException("Invalid HTTP header name: [{$name}]");
+        }
+    }
+
+    private static function assertValidHeaderValue(string $value): void
+    {
+        if (preg_match('/[\r\n\0]/', $value)) {
+            throw new \InvalidArgumentException(
+                'Invalid HTTP header value: must not contain CR, LF, or NUL characters.'
+            );
         }
     }
 }

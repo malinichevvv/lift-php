@@ -77,6 +77,8 @@ use Lift\Database\Schema\Schema;
  */
 final class DatabaseQueue implements QueueInterface
 {
+    use SerializesJobs;
+
     private bool $tableChecked = false;
     private readonly ?\Closure $extraColumns;
 
@@ -86,12 +88,15 @@ final class DatabaseQueue implements QueueInterface
      * @param callable|null $extraColumns     `function (Blueprint $table): void` — add custom columns.
      * @param int           $reservedTimeout  Seconds after which a reserved-but-unfinished row is
      *                                        released back to the queue (crash recovery).
+     * @param string        $secret           When non-empty, payloads are HMAC-signed (SHA-256).
+     *                                        Prevents RCE via deserialization of tampered DB rows.
      */
     public function __construct(
         private readonly Connection $db,
         private readonly string $table = 'jobs',
         ?callable $extraColumns = null,
         private readonly int $reservedTimeout = 60,
+        private readonly string $secret = '',
     ) {
         $this->extraColumns = $extraColumns !== null ? \Closure::fromCallable($extraColumns) : null;
     }
@@ -163,7 +168,7 @@ final class DatabaseQueue implements QueueInterface
             return null;
         }
 
-        $job = $this->deserialise((string) $row['payload']);
+        $job = $this->deserialiseJob((string) $row['payload']);
         return new DatabaseJobEnvelope($job, $this, (int) $row['id']);
     }
 
@@ -319,12 +324,12 @@ final class DatabaseQueue implements QueueInterface
 
     private function insertJob(JobInterface $job, int $delay): string
     {
-        $id  = $this->generateId();
+        $id  = $this->generateJobId('db');
         $now = time();
 
         $base = [
             'queue'        => $job->getQueue(),
-            'payload'      => $this->serialise($job, $id),
+            'payload'      => $this->serialiseJob($job, $id),
             'attempts'     => 0,
             'available_at' => $now + $delay,
             'reserved_at'  => null,
@@ -381,40 +386,4 @@ final class DatabaseQueue implements QueueInterface
         });
     }
 
-    private function serialise(JobInterface $job, string $id): string
-    {
-        $data = json_encode([
-            'id'       => $id,
-            'class'    => $job::class,
-            'payload'  => serialize($job),
-            'tries'    => $job->getTries(),
-            'pushedAt' => time(),
-        ]);
-
-        if ($data === false) {
-            throw new \RuntimeException('Failed to serialise job: ' . json_last_error_msg());
-        }
-
-        return $data;
-    }
-
-    private function deserialise(string $raw): JobInterface
-    {
-        $data = json_decode($raw, true);
-        if (!is_array($data) || !isset($data['payload'])) {
-            throw new \RuntimeException("Corrupted queue payload: {$raw}");
-        }
-
-        $job = unserialize($data['payload']);
-        if (!$job instanceof JobInterface) {
-            throw new \RuntimeException("Deserialised payload is not a JobInterface: {$data['class']}");
-        }
-
-        return $job;
-    }
-
-    private function generateId(): string
-    {
-        return 'db_' . bin2hex(random_bytes(8));
-    }
 }

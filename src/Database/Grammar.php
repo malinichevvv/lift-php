@@ -47,6 +47,33 @@ final class Grammar
         };
     }
 
+    /**
+     * Compile the locking suffix for a SELECT statement.
+     *
+     * Driver behaviour:
+     * - MySQL/MariaDB: `FOR UPDATE [SKIP LOCKED]` or `LOCK IN SHARE MODE` / `FOR SHARE SKIP LOCKED`
+     * - PostgreSQL:    `FOR UPDATE [SKIP LOCKED]` or `FOR SHARE [SKIP LOCKED]`
+     * - SQLite:        empty string — SQLite has no row-level locking
+     *
+     * @param 'update'|'share' $type
+     */
+    public function compileLock(string $type, bool $skipLocked = false): string
+    {
+        if ($this->driver === 'sqlite') {
+            return '';
+        }
+
+        if ($type === 'share') {
+            if ($skipLocked) {
+                return ' FOR SHARE SKIP LOCKED';
+            }
+            // LOCK IN SHARE MODE works on all MySQL versions; FOR SHARE is 8.0+ only
+            return $this->driver === 'mysql' ? ' LOCK IN SHARE MODE' : ' FOR SHARE';
+        }
+
+        return $skipLocked ? ' FOR UPDATE SKIP LOCKED' : ' FOR UPDATE';
+    }
+
     public function getDriver(): string
     {
         return $this->driver;

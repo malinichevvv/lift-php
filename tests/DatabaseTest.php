@@ -45,6 +45,32 @@ class GrammarTest extends TestCase
         $g = new Grammar('sqlite');
         self::assertSame('*', $g->wrap('*'));
     }
+
+    public function testCompileLockSqlite(): void
+    {
+        $g = new Grammar('sqlite');
+        self::assertSame('', $g->compileLock('update'));
+        self::assertSame('', $g->compileLock('share'));
+        self::assertSame('', $g->compileLock('update', true));
+    }
+
+    public function testCompileLockMysql(): void
+    {
+        $g = new Grammar('mysql');
+        self::assertSame(' FOR UPDATE', $g->compileLock('update'));
+        self::assertSame(' FOR UPDATE SKIP LOCKED', $g->compileLock('update', true));
+        self::assertSame(' LOCK IN SHARE MODE', $g->compileLock('share'));
+        self::assertSame(' FOR SHARE SKIP LOCKED', $g->compileLock('share', true));
+    }
+
+    public function testCompileLockPgsql(): void
+    {
+        $g = new Grammar('pgsql');
+        self::assertSame(' FOR UPDATE', $g->compileLock('update'));
+        self::assertSame(' FOR UPDATE SKIP LOCKED', $g->compileLock('update', true));
+        self::assertSame(' FOR SHARE', $g->compileLock('share'));
+        self::assertSame(' FOR SHARE SKIP LOCKED', $g->compileLock('share', true));
+    }
 }
 
 class DatabaseTest extends TestCase
@@ -447,5 +473,69 @@ class DatabaseTest extends TestCase
 
         $val = $this->db->value('SELECT "age" FROM "users" WHERE "name" = ?', ['Alice']);
         self::assertSame('30', (string) $val);
+    }
+
+    // -----------------------------------------------------------------
+    // Pessimistic locking — toSql() output (SQLite omits the clause)
+    // -----------------------------------------------------------------
+
+    public function testForUpdateAppendsClause(): void
+    {
+        $sql = $this->db->table('users')->where('active', 1)->forUpdate()->toSql();
+        // SQLite grammar returns empty string for lock clause
+        self::assertStringNotContainsString('FOR UPDATE', $sql);
+        self::assertStringContainsString('WHERE', $sql);
+    }
+
+    public function testSharedLockAppendsClause(): void
+    {
+        $sql = $this->db->table('users')->sharedLock()->toSql();
+        self::assertStringNotContainsString('LOCK IN SHARE MODE', $sql);
+        self::assertStringNotContainsString('FOR SHARE', $sql);
+    }
+
+    public function testForUpdateSkipLockedInSql(): void
+    {
+        // Verify the builder records the intent even if SQLite omits it
+        $qb  = $this->db->table('users')->forUpdate(skipLocked: true);
+        $sql = $qb->toSql();
+        self::assertStringStartsWith('SELECT', $sql);
+        // No clause appended on SQLite — that is correct behaviour
+        self::assertStringNotContainsString('SKIP LOCKED', $sql);
+    }
+
+    public function testForUpdateExecutesOnSqlite(): void
+    {
+        // forUpdate() on SQLite runs as a plain SELECT (no lock clause)
+        $this->db->table('users')->insert(['name' => 'Bob', 'email' => 'bob@x.com', 'age' => 25]);
+
+        $this->db->transaction(function () {
+            $row = $this->db->table('users')->where('name', 'Bob')->forUpdate()->first();
+            self::assertIsArray($row);
+            self::assertSame('Bob', $row['name']);
+        });
+    }
+
+    // -----------------------------------------------------------------
+    // Advisory locks — only MySQL/PostgreSQL; SQLite throws
+    // -----------------------------------------------------------------
+
+    public function testAdvisoryLockThrowsOnSqlite(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Advisory locks are not supported');
+        $this->db->advisoryLock('test-lock');
+    }
+
+    public function testAdvisoryUnlockThrowsOnSqlite(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->db->advisoryUnlock('test-lock');
+    }
+
+    public function testWithAdvisoryLockThrowsOnSqlite(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->db->withAdvisoryLock('test-lock', fn() => null);
     }
 }

@@ -40,6 +40,9 @@ final class QueryBuilder
     private array $orders = [];
     private ?int $limitVal  = null;
     private ?int $offsetVal = null;
+    /** @var 'update'|'share'|null */
+    private ?string $lock = null;
+    private bool $lockSkipLocked = false;
 
     public function __construct(
         private readonly Connection $connection,
@@ -75,7 +78,11 @@ final class QueryBuilder
 
     public function join(string $table, string $first, string $operator, string $second, string $type = 'INNER'): self
     {
-        $this->joins[] = compact('type', 'table', 'first', 'operator', 'second');
+        $typeUpper = strtoupper($type);
+        if (!in_array($typeUpper, ['INNER', 'LEFT', 'RIGHT', 'CROSS', 'FULL', 'FULL OUTER'], true)) {
+            throw new \InvalidArgumentException("Invalid JOIN type: [{$type}]");
+        }
+        $this->joins[] = ['type' => $typeUpper, 'table' => $table, 'first' => $first, 'operator' => $operator, 'second' => $second];
         return $this;
     }
 
@@ -116,10 +123,15 @@ final class QueryBuilder
             return $this->whereNull($column, $boolean);
         }
 
+        $opUpper = strtoupper((string) $operator);
+        if (!in_array($opUpper, self::OPERATORS, true)) {
+            throw new \InvalidArgumentException("Invalid WHERE operator: [{$operator}]");
+        }
+
         $this->wheres[] = [
             'type'     => 'basic',
             'column'   => $column,
-            'operator' => strtoupper((string) $operator),
+            'operator' => $opUpper,
             'value'    => $value,
             'boolean'  => strtoupper($boolean),
         ];
@@ -201,7 +213,11 @@ final class QueryBuilder
             $value    = $operator;
             $operator = '=';
         }
-        $this->havings[] = compact('column', 'operator', 'value');
+        $opUpper = strtoupper((string) $operator);
+        if (!in_array($opUpper, self::OPERATORS, true)) {
+            throw new \InvalidArgumentException("Invalid HAVING operator: [{$operator}]");
+        }
+        $this->havings[] = ['column' => $column, 'operator' => $opUpper, 'value' => $value];
         return $this;
     }
 
@@ -250,6 +266,50 @@ final class QueryBuilder
     public function take(int $value): self
     {
         return $this->limit($value);
+    }
+
+    // -----------------------------------------------------------------
+    // Pessimistic locking
+    // -----------------------------------------------------------------
+
+    /**
+     * Lock the selected rows exclusively for the duration of the transaction.
+     *
+     * Appends `FOR UPDATE [SKIP LOCKED]` to the SELECT. On SQLite the clause is
+     * silently omitted — use a transaction with `BEGIN EXCLUSIVE` instead.
+     *
+     * ```php
+     * $db->transaction(function () use ($db) {
+     *     $job = $db->table('jobs')
+     *         ->where('status', 'pending')
+     *         ->orderBy('id')
+     *         ->limit(1)
+     *         ->forUpdate(skipLocked: true)
+     *         ->first();
+     *     if ($job) {
+     *         $db->table('jobs')->where('id', $job['id'])->update(['status' => 'running']);
+     *     }
+     * });
+     * ```
+     */
+    public function forUpdate(bool $skipLocked = false): self
+    {
+        $this->lock           = 'update';
+        $this->lockSkipLocked = $skipLocked;
+        return $this;
+    }
+
+    /**
+     * Acquire a shared lock on the selected rows.
+     *
+     * Appends `FOR SHARE` (PostgreSQL) or `LOCK IN SHARE MODE` (MySQL) to the SELECT.
+     * Other readers can still acquire shared locks; writers are blocked.
+     */
+    public function sharedLock(bool $skipLocked = false): self
+    {
+        $this->lock           = 'share';
+        $this->lockSkipLocked = $skipLocked;
+        return $this;
     }
 
     // -----------------------------------------------------------------
@@ -524,6 +584,10 @@ final class QueryBuilder
 
         if ($this->offsetVal !== null) {
             $sql .= ' OFFSET ' . $this->offsetVal;
+        }
+
+        if ($this->lock !== null) {
+            $sql .= $this->grammar->compileLock($this->lock, $this->lockSkipLocked);
         }
 
         return $sql;

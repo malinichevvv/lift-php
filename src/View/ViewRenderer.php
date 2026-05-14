@@ -97,9 +97,24 @@ final class ViewRenderer
     {
         $name = array_pop($this->sectionStack);
         if ($name === null) {
+            ob_end_clean();
             throw new \RuntimeException('No active view section to end');
         }
         $this->sections[$name] = (string) ob_get_clean();
+    }
+
+    /**
+     * Close any output buffers that were opened by {@see section()} calls
+     * but never closed — called automatically by {@see include()} on error.
+     *
+     * @internal
+     */
+    public function discardOpenSections(): void
+    {
+        while ($this->sectionStack !== []) {
+            array_pop($this->sectionStack);
+            ob_end_clean();
+        }
     }
 
     /**
@@ -146,8 +161,14 @@ final class ViewRenderer
         $view    = $context;
         extract($context->data(), EXTR_SKIP);
         ob_start();
-        require $file;
-        return (string) ob_get_clean();
+        try {
+            require $file;
+            return (string) ob_get_clean();
+        } catch (\Throwable $e) {
+            ob_end_clean();
+            $this->discardOpenSections();
+            throw $e;
+        }
     }
 
     /**

@@ -162,6 +162,14 @@ final class Validator
 
     private static ?Translator $defaultTranslator = null;
 
+    /**
+     * Process-level cache: rule string → [name, params[]].
+     * e.g. 'max:255' → ['max', ['255']]
+     *
+     * @var array<string, array{0: string, 1: list<string>}>
+     */
+    private static array $parsedRuleCache = [];
+
     // Meta-rule names that are handled in validateField, not in applyBuiltinOrExtension
     private const META_RULES = [
         'required', 'nullable', 'sometimes', 'present', 'filled',
@@ -401,8 +409,8 @@ final class Validator
             'json'                => is_string($value) && json_validate($value),
             'uuid'                => is_string($value) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $value) === 1,
             'mac_address'         => is_string($value) && preg_match('/^([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$/', $value) === 1,
-            'regex'               => is_string($value) && preg_match($params[0] ?? '//', $value) === 1,
-            'not_regex'           => is_string($value) && preg_match($params[0] ?? '//', $value) === 0,
+            'regex'               => is_string($value) && $this->pregMatch($params[0] ?? '//', $value) === 1,
+            'not_regex'           => is_string($value) && $this->pregMatch($params[0] ?? '//', $value) === 0,
             'lowercase'           => is_string($value) && $value === mb_strtolower($value),
             'uppercase'           => is_string($value) && $value === mb_strtoupper($value),
             // ── Value ──────────────────────────────────────────────────────
@@ -748,11 +756,15 @@ final class Validator
 
     private function parseRule(string $rule): array
     {
+        if (isset(self::$parsedRuleCache[$rule])) {
+            return self::$parsedRuleCache[$rule];
+        }
+
         if (!str_contains($rule, ':')) {
-            return [$rule, []];
+            return self::$parsedRuleCache[$rule] = [$rule, []];
         }
         [$name, $paramStr] = explode(':', $rule, 2);
-        return [$name, explode(',', $paramStr)];
+        return self::$parsedRuleCache[$rule] = [$name, explode(',', $paramStr)];
     }
 
     private function addError(string $field, string $message): void
@@ -774,5 +786,25 @@ final class Validator
             $cursor = $cursor[$part];
         }
         return $cursor;
+    }
+
+    /**
+     * Run preg_match with a developer-supplied pattern, converting PHP warnings into
+     * a clear InvalidArgumentException so badly-formed regex rules surface immediately.
+     */
+    private function pregMatch(string $pattern, string $subject): int
+    {
+        set_error_handler(static fn() => true);
+        try {
+            $result = preg_match($pattern, $subject);
+        } catch (\Throwable $e) {
+            restore_error_handler();
+            throw new \InvalidArgumentException("Invalid regex pattern in validation rule [{$pattern}]: {$e->getMessage()}");
+        }
+        restore_error_handler();
+        if ($result === false) {
+            throw new \InvalidArgumentException("Invalid regex pattern in validation rule: [{$pattern}]");
+        }
+        return $result;
     }
 }

@@ -27,10 +27,13 @@ class Session
     private array $data = [];
 
     /**
-     * @param SessionStoreInterface|null $store Backing store; `null` = memory-only (no persistence).
-     * @param string|null $id Existing session ID (read from cookie). Auto-generated when `null`.
-     * @param int $lifetime Cookie and store TTL in seconds.
-     * @param string $cookieName Cookie name used to locate the session ID on incoming requests.
+     * @param SessionStoreInterface|null    $store          Backing store; `null` = memory-only (no persistence).
+     * @param string|null                   $id             Existing session ID (read from cookie). Auto-generated when `null`.
+     * @param int                           $lifetime       Cookie and store TTL in seconds.
+     * @param string                        $cookieName     Cookie name used to locate the session ID on incoming requests.
+     * @param bool|string[]                 $allowedClasses Passed to `unserialize()` as `allowed_classes`.
+     *                                                      `true` = allow all (default, backward-compatible).
+     *                                                      `false` = no objects. Array = allowlist of class names.
      * @throws RandomException
      */
     public function __construct(
@@ -38,6 +41,7 @@ class Session
         ?string $id = null,
         private readonly int $lifetime = 7200,
         private readonly string $cookieName = 'lift_session',
+        private readonly bool|array $allowedClasses = true,
     ) {
         $this->id = $id ?? ($_COOKIE[$this->cookieName] ?? bin2hex(random_bytes(20)));
     }
@@ -54,7 +58,7 @@ class Session
         }
 
         $payload = $this->store?->read($this->id);
-        $data = $payload === null ? [] : unserialize($payload, ['allowed_classes' => true]);
+        $data = $payload === null ? [] : unserialize($payload, ['allowed_classes' => $this->allowedClasses]);
         $this->data = is_array($data) ? $data : [];
         $this->data['_flash_old'] ??= [];
         $this->data['_flash_new'] ??= [];

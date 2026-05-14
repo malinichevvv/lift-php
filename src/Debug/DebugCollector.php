@@ -55,14 +55,34 @@ final class DebugCollector
         $this->response = $response;
     }
 
-    /** Record a thrown exception without retaining the full object graph. */
+    /** Record a thrown exception, capturing the full stack trace for the debug panel. */
     public function recordException(Throwable $e): void
     {
+        $trace = [];
+        foreach ($e->getTrace() as $frame) {
+            $trace[] = [
+                'file'     => $frame['file']     ?? '[internal]',
+                'line'     => $frame['line']     ?? 0,
+                'class'    => $frame['class']    ?? '',
+                'type'     => $frame['type']     ?? '',
+                'function' => $frame['function'] ?? '',
+            ];
+        }
+
+        $previous = null;
+        $prev     = $e->getPrevious();
+        if ($prev !== null) {
+            $previous = ['class' => $prev::class, 'message' => $prev->getMessage()];
+        }
+
         $this->exceptions[] = [
-            'class' => $e::class,
-            'message' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
+            'class'    => $e::class,
+            'message'  => $e->getMessage(),
+            'code'     => $e->getCode(),
+            'file'     => $e->getFile(),
+            'line'     => $e->getLine(),
+            'trace'    => $trace,
+            'previous' => $previous,
         ];
     }
 
@@ -126,12 +146,17 @@ final class DebugCollector
             return [];
         }
 
+        $body = $this->request->getParsedBody();
+        $bodyData = is_array($body) ? $this->maskArray($body) : [];
+
         return [
-            'method' => $this->request->getMethod(),
-            'uri' => (string) $this->request->getUri(),
-            'query' => $this->maskArray($this->request->getQueryParams()),
-            'params' => $this->maskArray($this->request->getRouteParams()),
+            'method'  => $this->request->getMethod(),
+            'uri'     => (string) $this->request->getUri(),
+            'query'   => $this->maskArray($this->request->getQueryParams()),
+            'body'    => $bodyData,
+            'params'  => $this->maskArray($this->request->getRouteParams()),
             'headers' => $this->maskHeaders($this->request->getHeaders()),
+            'cookies' => $this->maskArray($this->request->getCookieParams()),
         ];
     }
 

@@ -242,6 +242,88 @@ final class Connection
     }
 
     // -----------------------------------------------------------------
+    // Advisory (application-level) locks
+    // -----------------------------------------------------------------
+
+    /**
+     * Acquire a named advisory lock at the database level.
+     *
+     * Returns true when the lock was acquired within `$timeout` seconds, false on timeout.
+     * Supported on MySQL and PostgreSQL only.
+     *
+     * ```php
+     * if ($db->advisoryLock('invoice-generation')) {
+     *     try {
+     *         // only one process runs this block at a time
+     *     } finally {
+     *         $db->advisoryUnlock('invoice-generation');
+     *     }
+     * }
+     * ```
+     *
+     * @throws \RuntimeException On unsupported drivers (e.g. SQLite).
+     */
+    public function advisoryLock(string $name, int $timeout = 10): bool
+    {
+        return match ($this->grammar->getDriver()) {
+            'mysql'  => (bool) $this->value('SELECT GET_LOCK(?, ?)', [$name, $timeout]),
+            'pgsql'  => (bool) $this->value('SELECT pg_try_advisory_lock(?)', [$this->advisoryKey($name)]),
+            default  => throw new \RuntimeException(
+                "Advisory locks are not supported for driver: [{$this->grammar->getDriver()}]"
+            ),
+        };
+    }
+
+    /**
+     * Release a previously acquired advisory lock.
+     *
+     * Returns true if the lock was held and released, false if it was not held by this session.
+     *
+     * @throws \RuntimeException On unsupported drivers.
+     */
+    public function advisoryUnlock(string $name): bool
+    {
+        return match ($this->grammar->getDriver()) {
+            'mysql'  => (bool) $this->value('SELECT RELEASE_LOCK(?)', [$name]),
+            'pgsql'  => (bool) $this->value('SELECT pg_advisory_unlock(?)', [$this->advisoryKey($name)]),
+            default  => throw new \RuntimeException(
+                "Advisory locks are not supported for driver: [{$this->grammar->getDriver()}]"
+            ),
+        };
+    }
+
+    /**
+     * Acquire an advisory lock, execute a callback, then release the lock automatically.
+     *
+     * Throws a RuntimeException if the lock cannot be acquired within `$timeout` seconds.
+     *
+     * ```php
+     * $result = $db->withAdvisoryLock('daily-report', function (Connection $db) {
+     *     return generateReport($db);
+     * });
+     * ```
+     *
+     * @throws \RuntimeException When the lock cannot be acquired or on unsupported drivers.
+     */
+    public function withAdvisoryLock(string $name, callable $callback, int $timeout = 10): mixed
+    {
+        if (!$this->advisoryLock($name, $timeout)) {
+            throw new \RuntimeException("Could not acquire advisory lock: [{$name}]");
+        }
+        try {
+            return $callback($this);
+        } finally {
+            $this->advisoryUnlock($name);
+        }
+    }
+
+    /** Convert a string lock name to a stable 32-bit integer key for PostgreSQL. */
+    private function advisoryKey(string $name): int
+    {
+        return crc32($name);
+    }
+
+    // -----------------------------------------------------------------
     // Introspection
     // -----------------------------------------------------------------
 

@@ -12,8 +12,13 @@ use Lift\Redis\RedisClientInterface;
  * Values are serialised with {@see serialize()} so any PHP value (objects,
  * arrays, booleans) can be stored safely.
  *
+ * When a non-empty `$secret` is provided, every stored value is wrapped in an
+ * HMAC-signed envelope. This prevents an attacker who can write to Redis from
+ * injecting a crafted PHP serialized payload and triggering object injection /
+ * RCE on the next `get()`.
+ *
  * ```php
- * $cache = new RedisCache(new RedisClient());
+ * $cache = new RedisCache(new RedisClient(), secret: $_ENV['CACHE_SECRET']);
  * $app->instance(CacheInterface::class, $cache);
  * ```
  */
@@ -22,6 +27,7 @@ final class RedisCache implements CacheInterface
     public function __construct(
         private readonly RedisClientInterface $redis,
         private readonly string $prefix = 'lift:cache:',
+        private readonly string $secret = '',
     ) {}
 
     /** {@inheritdoc} */
@@ -31,13 +37,17 @@ final class RedisCache implements CacheInterface
         if ($raw === false) {
             return $default;
         }
-        return unserialize($raw);
+        $payload = $this->unwrap((string) $raw);
+        if ($payload === null) {
+            return $default;
+        }
+        return unserialize($payload);
     }
 
     /** {@inheritdoc} */
     public function set(string $key, mixed $value, int $ttl = 0): bool
     {
-        return $this->redis->set($this->prefix . $key, serialize($value), $ttl);
+        return $this->redis->set($this->prefix . $key, $this->wrap(serialize($value)), $ttl);
     }
 
     /** {@inheritdoc} */
@@ -81,5 +91,38 @@ final class RedisCache implements CacheInterface
         // Cannot safely flush only prefixed keys via the interface.
         // Caller should use the raw Redis client for targeted flushes.
         return true;
+    }
+
+    // -----------------------------------------------------------------
+    // HMAC envelope helpers
+    // -----------------------------------------------------------------
+
+    private function wrap(string $data): string
+    {
+        if ($this->secret === '') {
+            return $data;
+        }
+        $mac = hash_hmac('sha256', $data, $this->secret);
+        return json_encode(['v' => 1, 'mac' => $mac, 'data' => $data], JSON_THROW_ON_ERROR);
+    }
+
+    /** Returns null when signature verification fails (tampered payload). */
+    private function unwrap(string $raw): ?string
+    {
+        if ($this->secret === '') {
+            return $raw;
+        }
+
+        $envelope = json_decode($raw, true);
+        if (!is_array($envelope) || !isset($envelope['v'], $envelope['mac'], $envelope['data'])) {
+            return null;
+        }
+
+        $expected = hash_hmac('sha256', (string) $envelope['data'], $this->secret);
+        if (!hash_equals($expected, (string) $envelope['mac'])) {
+            return null;
+        }
+
+        return (string) $envelope['data'];
     }
 }
