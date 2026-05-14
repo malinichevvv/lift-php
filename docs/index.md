@@ -8,7 +8,7 @@ nav_order: 1
 
 **The lifting PHP micro-framework.**
 
-Lift is a fast, minimal PHP 8.1+ micro-framework that gives you everything you need to build production APIs — a router, DI container, PSR-15 middleware, application skeletons, debug tooling, JWT, encryption, queues, and JSON-RPC — without the overhead of a full-stack framework.
+Lift is a fast, minimal PHP 8.1+ micro-framework that gives you everything you need to build production APIs — a router, DI container, PSR-15 middleware, database ORM, migrations, queues (Redis + RabbitMQ), debug toolbar, JWT, encryption, and JSON-RPC — without the overhead of a full-stack framework.
 
 ## Install
 
@@ -53,11 +53,16 @@ $app->run();
 | PSR-7/11/15 | ✓ | ✗ | ✓ | ✓ |
 | Autowiring DI | ✓ | ✗ | ✗ | ✓ |
 | PHP attribute routing | ✓ | ✗ | ✗ | ✗ |
+| ORM + migrations | ✓ | ✗ | ✗ | ✓ |
+| Soft deletes + scopes | ✓ | ✗ | ✗ | ✓ |
 | JWT built-in | ✓ | ✗ | ✗ | ✗ |
 | Crypto (AES/Argon2) | ✓ | ✗ | ✗ | ✗ |
 | UUID v7 / ULID | ✓ | ✗ | ✗ | ✗ |
-| Queue system | ✓ | ✗ | ✗ | ✓ |
+| Queue system (Redis+AMQP) | ✓ | ✗ | ✗ | ✓ |
+| Debug toolbar | ✓ | ✗ | ✗ | ✗ |
 | JSON-RPC 2.0 | ✓ | ✗ | ✗ | ✗ |
+| Collection class | ✓ | ✗ | ✗ | ✓ |
+| CLI tool (lift) | ✓ | ✗ | ✗ | ✓ |
 | Zero non-PSR deps | ✓ | ✓ | ✗ | ✗ |
 
 ## Performance highlights

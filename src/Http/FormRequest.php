@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Lift\Http;
 
+use Lift\Translation\Translator;
+use Lift\Validation\Validator;
+
 /**
  * Base class for validated request DTOs.
  *
@@ -46,7 +49,11 @@ abstract class FormRequest
         $class ??= static::class;
         $prototype = new $class($request, []);
         $prototype->authorize($request);
-        $validated = $request->validate($prototype->rules());
+        $validated = $request->validate(
+            $prototype->rules(),
+            $prototype->messages(),
+            $prototype->translator(),
+        );
         $prototype->afterValidation($validated, $request);
 
         return new $class($request, $validated);
@@ -58,6 +65,35 @@ abstract class FormRequest
      * @return array<string, string|string[]>
      */
     abstract public function rules(): array;
+
+    /**
+     * Custom error messages keyed by `"field.rule"` or just `"rule"`.
+     *
+     * ```php
+     * public function messages(): array {
+     *     return [
+     *         'email.required' => 'Please enter your email address.',
+     *         'required'       => 'This field is required.',
+     *     ];
+     * }
+     * ```
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [];
+    }
+
+    /**
+     * Translator instance for localised validation messages.
+     *
+     * Return a configured {@see Translator} to override the global default.
+     */
+    public function translator(): ?Translator
+    {
+        return null;
+    }
 
     /**
      * Authorize the request before validation.

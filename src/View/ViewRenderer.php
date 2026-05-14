@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Lift\View;
 
+use Lift\Translation\Translator;
+
 /**
  * Stateful PHP template renderer.
  *
@@ -40,6 +42,7 @@ final class ViewRenderer
         private readonly ViewFactory $factory,
         private array $data = [],
         ?string $layout = null,
+        private readonly ?Translator $translator = null,
     ) {
         $this->layout = $layout;
     }
@@ -138,13 +141,35 @@ final class ViewRenderer
      */
     public function include(string $view, array $data = []): string
     {
-        $file = $this->factory->resolve($view);
+        $file    = $this->factory->resolve($view);
         $context = new ViewContext($this, $this->factory, array_replace($this->data, $data));
-        $view = $context;
+        $view    = $context;
         extract($context->data(), EXTR_SKIP);
         ob_start();
         require $file;
         return (string) ob_get_clean();
+    }
+
+    /**
+     * Translate a key using the factory's translator.
+     *
+     * Returns the key unchanged when no translator is configured.
+     *
+     * @param array<string, string|int|float> $replace
+     */
+    public function t(string $key, array $replace = []): string
+    {
+        return $this->translator?->get($key, $replace) ?? $key;
+    }
+
+    /**
+     * Translate a key selecting the correct plural form for $count.
+     *
+     * @param array<string, string|int|float> $replace
+     */
+    public function tc(string $key, int $count, array $replace = []): string
+    {
+        return $this->translator?->choice($key, $count, $replace) ?? $key;
     }
 
     /**

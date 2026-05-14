@@ -23,6 +23,10 @@ nav:
     url: /request
   - title: Response
     url: /response
+  - title: Database
+    url: /database
+  - title: Collections
+    url: /collections
   - title: JWT
     url: /jwt
   - title: Cryptography
@@ -31,6 +35,10 @@ nav:
     url: /uuid
   - title: Queues
     url: /queues
+  - title: Console (CLI)
+    url: /console
+  - title: Debug Toolbar
+    url: /debug
   - title: JSON-RPC 2.0
     url: /json-rpc
   - title: Framework Comparison

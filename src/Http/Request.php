@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lift\Http;
 
+use Lift\Translation\Translator;
 use Lift\Validation\ValidationException;
 use Lift\Validation\Validator;
 use Psr\Http\Message\ServerRequestInterface;
@@ -141,7 +142,14 @@ final class Request extends Message implements ServerRequestInterface
      * @return array<string, mixed>          The validated (and potentially transformed) data.
      * @throws ValidationException           When one or more rules fail.
      */
-    public function validate(array $rules): array
+    /**
+     * @param array<string, string|string[]> $rules
+     * @param array<string, string>          $messages  Custom error messages.
+     * @param Translator|null                $translator Localisation; falls back to Validator's global default.
+     * @return array<string, mixed>
+     * @throws ValidationException
+     */
+    public function validate(array $rules, array $messages = [], ?Translator $translator = null): array
     {
         $data = array_merge(
             $this->queryParams,
@@ -149,7 +157,7 @@ final class Request extends Message implements ServerRequestInterface
             $this->routeParams,
         );
 
-        return (new Validator($data, $rules))->validated();
+        return (new Validator($data, $rules, $messages, $translator))->validated();
     }
 
     /** @internal Used by the router to inject matched route params */

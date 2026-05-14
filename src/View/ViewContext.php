@@ -134,4 +134,35 @@ final class ViewContext
     {
         return $this->factory->asset($path);
     }
+
+    /**
+     * Translate a key using the factory's translator.
+     *
+     * Falls back to the key itself when no translator is configured.
+     *
+     * ```php
+     * <?= $view->t('welcome_message') ?>
+     * <?= $view->t('greeting', ['name' => $user->name]) ?>
+     * ```
+     *
+     * @param array<string, string|int|float> $replace
+     */
+    public function t(string $key, array $replace = []): string
+    {
+        return $this->renderer->t($key, $replace);
+    }
+
+    /**
+     * Translate a key selecting the correct plural form for $count.
+     *
+     * ```php
+     * <?= $view->tc('comments_count', $count, ['count' => $count]) ?>
+     * ```
+     *
+     * @param array<string, string|int|float> $replace
+     */
+    public function tc(string $key, int $count, array $replace = []): string
+    {
+        return $this->renderer->tc($key, $count, $replace);
+    }
 }

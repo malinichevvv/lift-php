@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lift\View;
 
 use Lift\Http\Response;
+use Lift\Translation\Translator;
 
 /**
  * View factory — resolves, compiles, and renders PHP template files.
@@ -35,6 +36,8 @@ final class ViewFactory
     /** @var array<string, mixed> Variables shared across every rendered view. */
     private array $shared = [];
 
+    private ?Translator $translator = null;
+
     /**
      * @param string $path      Absolute path to the views root directory.
      * @param string $extension File extension used when resolving view names (without leading dot).
@@ -50,6 +53,16 @@ final class ViewFactory
     public function path(): string
     {
         return $this->path;
+    }
+
+    /**
+     * Set a translator that will be used for `$view->t()` and `$view->tc()`
+     * inside every template rendered by this factory.
+     */
+    public function setTranslator(Translator $translator): self
+    {
+        $this->translator = $translator;
+        return $this;
     }
 
     /**
@@ -81,7 +94,7 @@ final class ViewFactory
      */
     public function render(string $view, array $data = [], ?string $layout = null): string
     {
-        return (new ViewRenderer($this, array_replace($this->shared, $data), $layout))->render($view);
+        return (new ViewRenderer($this, array_replace($this->shared, $data), $layout, $this->translator))->render($view);
     }
 
     /**

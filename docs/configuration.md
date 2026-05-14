@@ -160,11 +160,11 @@ $app->instance(\Psr\SimpleCache\CacheInterface::class, new Psr16Adapter($cache))
 
 ## Queue
 
-| Variable         | Type   | Default   | Description |
-|------------------|--------|-----------|-------------|
-| `QUEUE_DRIVER`   | string | `sync`    | Driver: `sync`, `array`, `redis`. |
-| `QUEUE_DEFAULT`  | string | `default` | Default queue name. |
-| `QUEUE_RETRY_AFTER` | int | `90`      | Seconds before a job is considered failed and retried. |
+| Variable              | Type   | Default   | Description |
+|-----------------------|--------|-----------|-------------|
+| `QUEUE_DRIVER`        | string | `sync`    | Driver: `sync`, `array`, `redis`, `amqp`. |
+| `QUEUE_DEFAULT`       | string | `default` | Default queue name. |
+| `QUEUE_RETRY_AFTER`   | int    | `90`      | Seconds before a job is considered failed and retried. |
 
 ```dotenv
 QUEUE_DRIVER=redis
@@ -173,11 +173,38 @@ QUEUE_DEFAULT=default
 
 ```php
 $queue = match (Env::string('QUEUE_DRIVER', 'sync')) {
-    'redis' => new RedisQueue($redis, Env::string('QUEUE_DEFAULT', 'default')),
+    'redis' => new RedisQueue($redis),
+    'amqp'  => new AmqpQueue([
+                   'host'     => Env::string('RABBITMQ_HOST', 'localhost'),
+                   'port'     => Env::int('RABBITMQ_PORT', 5672),
+                   'user'     => Env::string('RABBITMQ_USER', 'guest'),
+                   'password' => Env::string('RABBITMQ_PASSWORD', 'guest'),
+                   'vhost'    => Env::string('RABBITMQ_VHOST', '/'),
+               ]),
     'array' => new ArrayQueue(),
     default => new SyncQueue(),
 };
 $app->setQueue($queue);
+```
+
+### RabbitMQ environment variables
+
+Used when `QUEUE_DRIVER=amqp`. Requires `composer require php-amqplib/php-amqplib "^3.0"`.
+
+| Variable            | Type   | Default     | Description |
+|---------------------|--------|-------------|-------------|
+| `RABBITMQ_HOST`     | string | `localhost` | RabbitMQ server host. |
+| `RABBITMQ_PORT`     | int    | `5672`      | AMQP port. |
+| `RABBITMQ_USER`     | string | `guest`     | AMQP username. |
+| `RABBITMQ_PASSWORD` | string | `guest`     | AMQP password. |
+| `RABBITMQ_VHOST`    | string | `/`         | Virtual host. |
+
+```dotenv
+QUEUE_DRIVER=amqp
+RABBITMQ_HOST=rabbitmq.internal
+RABBITMQ_USER=myapp
+RABBITMQ_PASSWORD=secret
+RABBITMQ_VHOST=/myapp
 ```
 
 ---

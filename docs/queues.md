@@ -1,12 +1,12 @@
 ---
 layout: page
 title: Queues
-nav_order: 13
+nav_order: 15
 ---
 
 # Queues
 
-Lift's queue system lets you defer time-consuming work (emails, reports, webhooks) to a background worker. Three drivers are included: `SyncQueue` (immediate, for development), `ArrayQueue` (in-memory), and `RedisQueue` (production).
+Lift's queue system lets you defer time-consuming work (emails, reports, webhooks) to a background worker. Four drivers are included: `SyncQueue` (immediate, for development), `ArrayQueue` (in-memory), `RedisQueue` (production), and `AmqpQueue` (RabbitMQ).
 
 ---
 
@@ -97,6 +97,58 @@ $queue = new RedisQueue($redis);
 
 $app->setQueue($queue);
 ```
+
+### AmqpQueue (RabbitMQ)
+
+RabbitMQ driver using the AMQP protocol. Requires [php-amqplib](https://github.com/php-amqplib/php-amqplib) as a separate dependency:
+
+```bash
+composer require php-amqplib/php-amqplib "^3.0"
+```
+
+```php
+use Lift\Queue\AmqpQueue;
+
+$queue = new AmqpQueue([
+    'host'     => $_ENV['RABBITMQ_HOST']     ?? 'localhost',
+    'port'     => $_ENV['RABBITMQ_PORT']     ?? 5672,
+    'user'     => $_ENV['RABBITMQ_USER']     ?? 'guest',
+    'password' => $_ENV['RABBITMQ_PASSWORD'] ?? 'guest',
+    'vhost'    => $_ENV['RABBITMQ_VHOST']    ?? '/',
+]);
+
+$app->setQueue($queue);
+```
+
+#### Configuration options
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `host` | `localhost` | RabbitMQ server host. |
+| `port` | `5672` | AMQP port. |
+| `user` | `guest` | AMQP username. |
+| `password` | `guest` | AMQP password. |
+| `vhost` | `/` | Virtual host. |
+| `exchange` | `''` | Exchange name (empty = default exchange). |
+| `prefetch` | `1` | `basic_qos` prefetch count per consumer. |
+
+#### Delayed jobs
+
+Delayed jobs are implemented without requiring the RabbitMQ Delayed Message Exchange plugin. A short-lived TTL queue is declared automatically. When the TTL expires, RabbitMQ delivers the message to the main queue via a dead-letter exchange.
+
+```php
+// Dispatch a job to run after 5 minutes
+$job = new SendReminderJob($userId);
+$job->delay = 300;
+$queue->push($job);
+
+// Or use later() explicitly
+$queue->later(300, $job);
+```
+
+#### Graceful shutdown
+
+`AmqpQueue` closes its channel and connection automatically when it is garbage-collected (`__destruct`). In long-running workers, call `$queue = null` explicitly or let PHP's shutdown routine handle it.
 
 ---
 
