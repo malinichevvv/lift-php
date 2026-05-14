@@ -6,7 +6,7 @@ nav_order: 15
 
 # Queues
 
-Lift's queue system lets you defer time-consuming work (emails, reports, webhooks) to a background worker. Four drivers are included: `SyncQueue` (immediate, for development), `ArrayQueue` (in-memory), `RedisQueue` (production), and `AmqpQueue` (RabbitMQ).
+Lift's queue system lets you defer time-consuming work (emails, reports, webhooks) to a background worker. Five drivers are included: `SyncQueue` (immediate, for development), `ArrayQueue` (in-memory), `DatabaseQueue` (relational DB), `RedisQueue` (production), and `AmqpQueue` (RabbitMQ).
 
 ---
 
@@ -83,6 +83,153 @@ $queue->push($job);
 $queue->migrateDue();
 $job = $queue->pop();
 ```
+
+### DatabaseQueue
+
+Persists jobs in any PDO-compatible relational database (MySQL, PostgreSQL, SQLite).
+The table is created automatically on first use — no manual migration required for
+quick start, though `queue:table` can generate a versioned migration file.
+
+```php
+use Lift\Queue\DatabaseQueue;
+use Lift\Database\Connection;
+
+$db    = Connection::fromConfig([
+    'driver'   => 'mysql',
+    'host'     => 'localhost',
+    'database' => 'app',
+    'username' => 'root',
+    'password' => $_ENV['DB_PASSWORD'],
+]);
+
+$queue = new DatabaseQueue($db);
+$app->setQueue($queue);
+```
+
+#### Custom table name
+
+```php
+$queue = new DatabaseQueue($db, table: 'queue_jobs');
+```
+
+#### Extra columns
+
+Add application-specific columns via the `$extraColumns` callback:
+
+```php
+use Lift\Database\Schema\Blueprint;
+
+$queue = new DatabaseQueue(
+    db: $db,
+    table: 'jobs',
+    extraColumns: function (Blueprint $t): void {
+        $t->string('tenant_id', 36)->nullable()->index();
+        $t->string('priority', 10)->default('normal');
+    },
+);
+```
+
+To persist values into those columns, implement `HasDatabaseExtra` on the job:
+
+```php
+use Lift\Queue\AbstractJob;
+use Lift\Queue\HasDatabaseExtra;
+
+class SendInvoice extends AbstractJob implements HasDatabaseExtra
+{
+    public function __construct(
+        private readonly string $tenantId,
+        private readonly int    $invoiceId,
+    ) {}
+
+    public function handle(): void
+    {
+        // send invoice…
+    }
+
+    public function getDatabaseExtra(): array
+    {
+        return ['tenant_id' => $this->tenantId];
+    }
+}
+```
+
+#### Table schema
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | BIGINT PK | Auto-increment identifier. |
+| `queue` | VARCHAR(100) | Queue name (default: `"default"`). |
+| `payload` | LONGTEXT | Serialised job. |
+| `attempts` | SMALLINT | Times this row has been reserved. |
+| `available_at` | BIGINT | Unix timestamp when the job is dispatchable. |
+| `reserved_at` | BIGINT NULL | Set when a worker pops the job; NULL when pending. |
+| `failed_at` | BIGINT NULL | Set when all retries are exhausted. |
+| `error` | TEXT NULL | Exception message of the last failure. |
+| `created_at` | BIGINT | Unix timestamp of insertion. |
+| *(extra)* | *any* | Application columns via `$extraColumns`. |
+
+#### Generating a migration
+
+Run the console command to create a versioned migration file you can commit:
+
+```bash
+php lift queue:table
+# or with a custom table name:
+php lift queue:table --table=queue_jobs
+```
+
+Then apply it:
+
+```bash
+php lift migrate
+```
+
+#### Failed job management
+
+Jobs that exhaust all retries are marked failed but kept in the table.
+
+```php
+// List all failed jobs
+$rows = $queue->listFailed();          // array of row arrays
+$count = $queue->failedCount();
+
+// Re-queue a single failed job
+$queue->retry($rowId);
+
+// Re-queue all failed jobs
+$queue->retryAll();
+
+// Permanently delete all failed jobs
+$queue->clearFailed();
+```
+
+#### Crash recovery
+
+If a worker process crashes while a job is reserved, the row stays reserved
+indefinitely. `pop()` automatically releases rows reserved longer than
+`$reservedTimeout` seconds (default: 60) so another worker can pick them up.
+
+```php
+// Custom timeout (seconds)
+$queue = new DatabaseQueue($db, reservedTimeout: 120);
+
+// Manually prune stale reservations
+$released = $queue->pruneReserved(timeout: 90);
+
+// Release a specific row back to pending
+$queue->release($rowId);
+// With a delay (re-queue after 5 minutes)
+$queue->release($rowId, delay: 300);
+```
+
+#### Concurrent workers
+
+On MySQL and PostgreSQL, `pop()` uses `SELECT … FOR UPDATE SKIP LOCKED` inside a
+transaction — two workers polling simultaneously never receive the same job. On
+SQLite the transaction alone serializes access.
+
+---
 
 ### RedisQueue
 

@@ -8,9 +8,10 @@ namespace Lift\Queue;
  * Contract for queue drivers.
  *
  * Built-in drivers:
- * - {@see SyncQueue}   — executes jobs immediately in the same process
- * - {@see ArrayQueue}  — stores jobs in a PHP array (in-memory, no persistence)
- * - {@see RedisQueue}  — persists jobs in Redis lists / sorted sets
+ * - {@see SyncQueue}     — executes jobs immediately in the same process
+ * - {@see ArrayQueue}    — stores jobs in a PHP array (in-memory, no persistence)
+ * - {@see RedisQueue}    — persists jobs in Redis lists / sorted sets
+ * - {@see DatabaseQueue} — persists jobs in a relational database table (MySQL, PostgreSQL, SQLite)
  */
 interface QueueInterface
 {
