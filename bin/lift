@@ -27,6 +27,7 @@ use Lift\Console\Application;
 use Lift\Console\Commands\KeyGenerateCommand;
 use Lift\Console\Commands\MakeCommand;
 use Lift\Console\Commands\MakeMigrationCommand;
+use Lift\Console\Commands\ReplCommand;
 use Lift\Console\Commands\ServeCommand;
 
 $cli = new Application('lift', '1.0.0');
@@ -46,6 +47,7 @@ $cli->register(new MakeMigrationCommand());
 
 // utilities
 $cli->register(new KeyGenerateCommand());
+$cli->register(new ReplCommand());
 
 // If the project has a lift.php bootstrap, load it so app-specific commands are registered.
 $bootstrap = getcwd() . '/lift.php';

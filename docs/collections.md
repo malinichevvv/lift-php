@@ -1,367 +1,309 @@
 ---
 layout: page
 title: Collections
-nav_order: 11
+nav_order: 23
 ---
 
 # Collections
 
-`Lift\Support\Collection` is a fluent, immutable-by-default array wrapper. Most methods return a **new** `Collection` instance; a small set of explicitly mutable helpers (`push`, `put`, `forget`, `transform`, `each`) mutate in place and return `$this` for chaining.
+`Lift\Support\Collection` is a fluent, immutable-by-default wrapper around PHP arrays. It turns chains like *"filter the active users, group by country, map to email, count each group"* into one expression.
 
-`Collection` implements `Countable`, `IteratorAggregate`, `JsonSerializable`, and `ArrayAccess`.
+> Mental model: a `Collection` is to `array` what a stream is to a list — a chainable object where each method returns a **new** Collection holding the transformed data. Mutation is opt-in via a handful of clearly-named methods.
 
----
+## When to use it
 
-## Creating a collection
+- You're tempted to nest `array_map(array_filter(array_values($x), …), …)`.
+- You're writing a `foreach` just to compute a single summary value.
+- You want `pluck`, `groupBy`, `keyBy`, `sortBy('field')` etc. without manually fiddling with keys.
+
+For one-shot work (a single `array_map`), stay with PHP arrays — Collections are about chaining.
+
+## Two-second demo
 
 ```php
 use Lift\Support\Collection;
 
-$c = Collection::make([1, 2, 3]);          // from an array
-$c = new Collection(['a' => 1, 'b' => 2]); // constructor form
-$c = Collection::make();                    // empty
+$activeEmails = Collection::make($users)
+    ->filter(fn($u) => $u['active'])
+    ->sortBy('name')
+    ->pluck('email')
+    ->values();
+
+// $activeEmails is a Collection. Get back to an array when you're done:
+$array = $activeEmails->all();        // ['a@b.c', …]
 ```
 
----
-
-## Transformation
-
-These methods return a **new** collection.
-
-### `map(callable $callback): static`
-
-Apply a callback to every item.
+## Building one
 
 ```php
-$doubled = Collection::make([1, 2, 3])->map(fn($v) => $v * 2);
-// [2, 4, 6]
+Collection::make();                          // empty
+Collection::make([1, 2, 3]);
+Collection::make(['a' => 1, 'b' => 2]);
+new Collection($items);                       // same thing
 ```
 
-### `flatMap(callable $callback): static`
-
-Map each item to an array (or Collection) and flatten the result by one level.
+## Transformation — returns new Collection
 
 ```php
-Collection::make([1, 2])->flatMap(fn($v) => [$v, $v * 10]);
-// [1, 10, 2, 20]
+->map(fn($v, $k) => $v * 2)
+->flatMap(fn($v) => [$v, $v])              // map + flatten one level
+->filter(fn($v) => $v > 0)                 // keep matches; values() re-indexed
+->reject(fn($v) => $v > 0)                 // opposite of filter
+->reduce(fn($acc, $v) => $acc + $v, 0)     // returns the accumulator (not a Collection)
 ```
 
-### `filter(?callable $callback = null): static`
+Note: `filter()` and `reject()` re-index the result (sequential integer keys). Use `where(...)` if you want to preserve keys.
 
-Keep items that pass the callback. Without a callback, removes falsy values (`0`, `''`, `null`, `false`).
+## Extraction & slicing
 
 ```php
-Collection::make([1, 2, 3, 4])->filter(fn($v) => $v % 2 === 0); // [2, 4]
-Collection::make([0, 1, '', 'a', null])->filter();               // [1, 'a']
+->first();                              // first element or null
+->first(fn($v) => $v > 5);              // first matching
+->first(fn($v) => $v > 5, $default);    // with default
+
+->last();
+->last(fn($v) => $v > 5, $default);
+
+->take(3);                              // first 3
+->take(-3);                             // last 3
+->skip(2);                              // drop first 2
+->slice(2, 5);                          // [2, 7)
+
+->chunk(2);                             // Collection of Collections of 2 each
 ```
 
-### `reject(callable $callback): static`
-
-Inverse of `filter` — keeps items where the callback returns `false`.
+## Grouping / keying / plucking
 
 ```php
-Collection::make([1, 2, 3])->reject(fn($v) => $v === 2); // [1, 3]
+$users = [
+    ['id' => 1, 'role' => 'admin', 'email' => 'a@x'],
+    ['id' => 2, 'role' => 'user',  'email' => 'b@x'],
+    ['id' => 3, 'role' => 'admin', 'email' => 'c@x'],
+];
+
+Collection::make($users)
+    ->groupBy('role');
+// [
+//   'admin' => Collection [ user1, user3 ],
+//   'user'  => Collection [ user2 ],
+// ]
+
+Collection::make($users)
+    ->keyBy('id');
+// [
+//   1 => user1,
+//   2 => user2,
+//   3 => user3,
+// ]
+
+Collection::make($users)
+    ->pluck('email');               // ['a@x', 'b@x', 'c@x']
+Collection::make($users)
+    ->pluck('email', 'id');         // [1 => 'a@x', 2 => 'b@x', 3 => 'c@x']
 ```
 
-### `reduce(callable $callback, mixed $initial = null): mixed`
-
-Reduce the collection to a single value.
-
-```php
-$sum = Collection::make([1, 2, 3])->reduce(fn($carry, $v) => $carry + $v, 0); // 6
-```
-
----
-
-## Extraction
-
-### `first(?callable $callback = null, mixed $default = null): mixed`
-
-Return the first item, optionally matching a callback.
-
-```php
-Collection::make([1, 2, 3])->first();                     // 1
-Collection::make([1, 2, 3])->first(fn($v) => $v > 1);   // 2
-Collection::make([])->first(null, 'default');              // 'default'
-```
-
-### `last(?callable $callback = null, mixed $default = null): mixed`
-
-Return the last item, optionally matching a callback.
-
-### `take(int $limit): static`
-
-Take the first `$limit` items. Negative values take from the end.
-
-```php
-Collection::make([1, 2, 3, 4])->take(2);  // [1, 2]
-Collection::make([1, 2, 3, 4])->take(-2); // [3, 4]
-```
-
-### `skip(int $count): static`
-
-Skip the first `$count` items.
-
-```php
-Collection::make([1, 2, 3, 4])->skip(2); // [3, 4]
-```
-
-### `slice(int $offset, ?int $length = null): static`
-
-Return a slice, preserving keys.
-
-### `chunk(int $size): static`
-
-Split into chunks of `$size`, each returned as a `Collection`.
-
-```php
-$chunks = Collection::make([1, 2, 3, 4, 5])->chunk(2);
-// Collection of: [1,2], [3,4], [5]
-```
-
----
-
-## Grouping, keying, plucking
-
-### `pluck(string $key, ?string $indexBy = null): static`
-
-Extract a column. Works on arrays and objects.
-
-```php
-$names = Collection::make($users)->pluck('name');
-// ['Alice', 'Bob', 'Charlie']
-
-// Indexed by another column
-$emails = Collection::make($users)->pluck('email', 'id');
-// [1 => 'alice@...', 2 => 'bob@...']
-```
-
-### `groupBy(string|callable $key): static`
-
-Group items into sub-collections keyed by a column or callback.
-
-```php
-$byRole = Collection::make($users)->groupBy('role');
-$byRole->get('admin')->count(); // number of admins
-```
-
-### `keyBy(string|callable $key): static`
-
-Re-index the collection by a column or callback.
-
-```php
-$byId = Collection::make($users)->keyBy('id');
-$byId->get(42); // user with id=42
-```
-
----
+`groupBy` and `keyBy` also accept a callback: `keyBy(fn($u) => "user-{$u['id']}")`.
 
 ## Sorting
 
-### `sortBy(string|callable $key, bool $descending = false): static`
-
-Sort by a column name or callback. Returns a new, re-indexed collection.
-
 ```php
-Collection::make($users)->sortBy('name');
-Collection::make($products)->sortBy('price', descending: true);
-Collection::make($items)->sortBy(fn($item) => $item['price'] * $item['qty']);
+->sort();                                // basic asc
+->sort(fn($a, $b) => $a['age'] <=> $b['age']);
+
+->sortBy('age');                         // ascending by field
+->sortByDesc('age');
+->sortBy(fn($u) => strtolower($u['name'])); // by computed value
+
+->sortKeys();
+->reverse();
 ```
-
-### `sortByDesc(string|callable $key): static`
-
-Shorthand for `sortBy($key, descending: true)`.
-
-### `sort(?callable $callback = null): static`
-
-Sort a flat list of scalars. Optionally provide a comparison callback.
-
-```php
-Collection::make([3, 1, 2])->sort(); // [1, 2, 3]
-```
-
-### `sortKeys(bool $descending = false): static`
-
-Sort by key.
-
-### `reverse(): static`
-
-Reverse the order of items.
-
----
 
 ## Set operations
 
-### `unique(?string $key = null): static`
-
-Remove duplicates. Pass a column name to deduplicate objects/arrays by that field.
-
 ```php
-Collection::make([1, 2, 2, 3])->unique();        // [1, 2, 3]
-Collection::make($rows)->unique('email');         // one row per email
+->unique();                          // dedup
+->unique('email');                   // dedup by field
+->flatten();                         // recursive
+->flatten(1);                        // one level
+
+->merge([10, 11]);                   // append
+->diff([2, 3]);                      // values not in argument
+->intersect([2, 3]);                 // values present in both
 ```
 
-### `flatten(int $depth = PHP_INT_MAX): static`
-
-Recursively flatten nested arrays/collections.
+## Keys / values / flip
 
 ```php
-Collection::make([[1, 2], [3, [4, 5]]])->flatten();    // [1,2,3,4,5]
-Collection::make([[1, 2], [3, [4, 5]]])->flatten(1);   // [1,2,3,[4,5]]
+->keys();          // Collection of keys
+->values();        // Collection of values (re-indexed)
+->flip();          // swap keys/values  (each value must be hashable)
 ```
 
-### `merge(array|Collection $items): static`
-
-Merge with another array or collection.
-
-### `diff(array $items): static`
-
-Return items not present in `$items`.
-
-### `intersect(array $items): static`
-
-Return items also present in `$items`.
-
----
-
-## Keys and values
+## Search / check
 
 ```php
-$c->keys();    // new Collection of keys
-$c->values();  // new Collection (re-indexed)
-$c->flip();    // swap keys and values
+->contains(42);
+->contains(fn($v) => $v > 50);
+->has('email');                          // key check (not value)
+
+->where('status', 'active');             // filter that preserves keys
 ```
-
----
-
-## Search and checking
-
-### `contains(mixed $valueOrCallback): bool`
-
-```php
-$c->contains(42);                        // strict equality
-$c->contains(fn($v) => $v > 10);        // callback
-```
-
-### `has(mixed $key): bool`
-
-Check if a key exists.
-
-### `where(string $key, mixed $value): static`
-
-Filter items where the given column equals the value (strict).
-
-```php
-Collection::make($users)->where('active', true);
-```
-
----
 
 ## Aggregates
 
 ```php
-$c->count();         // total items
-$c->sum();           // sum of scalar items
-$c->sum('price');    // sum of a column (arrays or objects)
-$c->avg();           // average
-$c->avg('score');    // average of a column
-$c->min();           // minimum scalar
-$c->min('price');    // minimum of a column
-$c->max();           // maximum scalar
-$c->max('rating');   // maximum of a column
+->count();
+->sum();
+->sum('amount');                         // by field
+->sum(fn($x) => $x['price'] * $x['qty']);// by callback
+
+->avg();
+->avg('rating');
+
+->min();
+->min('price');
+
+->max();
+->max('price');
+
+->isEmpty();
+->isNotEmpty();
 ```
 
----
-
-## Info
+## Access & export
 
 ```php
-$c->isEmpty();    // true when count === 0
-$c->isNotEmpty(); // true when count > 0
+$c->get('email');                        // 'a@b.c' or null
+$c->get('email', 'default@x.y');
+
+$c->all();                               // raw underlying array
+$c->toArray();                           // recursive (JsonSerializables are unwrapped)
+$c->toJson();                            // JSON string
+$c->jsonSerialize();                     // for json_encode()
 ```
 
----
-
-## Accessing items
+`Collection` implements `JsonSerializable`, `Countable`, `IteratorAggregate`, and `ArrayAccess`, so:
 
 ```php
-$c->get('key');           // item by key, null if missing
-$c->get('key', 'default'); // with a fallback value
-$c->all();                // raw array (all items)
-$c->first();              // first item (no mutation)
-$c->last();               // last item (no mutation)
+foreach ($collection as $key => $value) { … }       // iterable
+count($collection);                                   // works
+$collection[0];                                       // works
+return $collection;                                   // route handler auto-encodes to JSON
 ```
 
----
+## Mutable helpers — return `$this`
 
-## Exporting
+These **do** mutate in place. Use sparingly; they're for the rare case where immutability hurts perf:
 
 ```php
-$c->toArray();   // array, with nested JsonSerializable objects resolved
-$c->toJson();    // JSON string
-json_encode($c); // uses JsonSerializable — same as toJson()
+$c->push($value);                        // append
+$c->put($key, $value);                   // set by key
+$c->forget($key);                        // delete
+$c->each(fn($v, $k) => …);               // foreach with early-exit if callback returns false
+$c->transform(fn($v) => $v * 2);         // in-place map
 ```
 
----
-
-## Mutable helpers
-
-These mutate the collection in place and return `$this`.
+## Real-world example — sales report
 
 ```php
-$c->push($value);          // append
-$c->put('key', $value);    // set by key
-$c->forget('key');         // remove by key
+$sales = Collection::make($orders)
+    ->filter(fn($o) => $o['status'] === 'paid')
+    ->groupBy(fn($o) => substr($o['paid_at'], 0, 7))   // 'YYYY-MM'
+    ->map(fn(Collection $month) => [
+        'count'   => $month->count(),
+        'revenue' => $month->sum('total'),
+        'top_country' => $month
+            ->groupBy('country')
+            ->map->count()                                // shorthand not supported — do this:
+            ->sortByDesc(fn($x) => $x)
+            ->keys()
+            ->first(),
+    ])
+    ->sortKeys();
 
-$c->each(function ($value, $key) {
-    // return false to stop iteration
-});
-
-$c->transform(fn($v) => strtoupper($v)); // mutate every item in place
+return Response::json($sales);
 ```
 
----
+The output is a month → stats map, all built without writing a single explicit loop.
 
-## Interface support
+## Idioms
 
-### `Countable`
+### Convert a Paginator's items
 
 ```php
-count($c);       // same as $c->count()
+$page = $db->table('posts')->paginate(1, 20);
+$tags = Collection::make($page->items())
+    ->pluck('tags')
+    ->flatten()
+    ->unique()
+    ->values();
 ```
 
-### `IteratorAggregate`
+### Group rows by a foreign key (manual eager-load)
 
 ```php
-foreach ($c as $key => $value) {
-    // ...
+$users = $db->table('users')->whereIn('id', $userIds)->get();
+$byId  = Collection::make($users)->keyBy('id')->all();
+
+foreach ($posts as $post) {
+    $post['author'] = $byId[$post['user_id']] ?? null;
 }
 ```
 
-### `ArrayAccess`
+### Aggregate something quick
 
 ```php
-$c[] = 'appended';
-$c['key'] = 'value';
-$val = $c['key'];
-unset($c['key']);
-isset($c['key']); // bool
+$avgRating = Collection::make($reviews)
+    ->where('product_id', $productId)
+    ->avg('rating');
 ```
 
----
-
-## Chaining example
+### Chunk for batching
 
 ```php
-$report = Collection::make($orders)
-    ->filter(fn($o) => $o['status'] === 'completed')
-    ->sortByDesc('total')
-    ->take(10)
-    ->map(fn($o) => [
-        'id'       => $o['id'],
-        'customer' => $o['customer_name'],
-        'total'    => number_format($o['total'], 2),
-    ]);
-
-return Response::json($report->values()->all());
+Collection::make($emails)
+    ->chunk(100)
+    ->each(fn(Collection $batch) => $mailer->sendBulk($batch->all()));
 ```
+
+## Performance notes
+
+- Each immutable method allocates a new Collection holding a new array. For very hot loops over millions of items, a plain `foreach` is faster.
+- `sortBy('field')` is `O(n log n)` with a callable comparator — fine for thousands, slow for millions.
+- `Collection` doesn't lazy-evaluate. For lazy pipelines over generators, write a `foreach` with `yield`.
+
+For typical web payloads (tens to thousands of rows), the readability win dominates the perf hit.
+
+## Common pitfalls
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Result has keys instead of `[0, 1, 2…]` | `filter()` re-indexes, but `where()` and `unique('field')` preserve keys | Call `->values()` at the end if you need a list. |
+| `pluck('foo')` on objects returns `null`s | The objects don't expose `foo` as a public property (or array element) | Make the property public, or extract first: `map(fn($o) => $o->getFoo())`. |
+| `merge()` overwrote my numeric keys | `array_merge` re-numbers integer keys | Use `+` semantics manually if you need to preserve them: `$c->all() + $other`. |
+| `groupBy` produces `Collection` of `Collection`s, not arrays | That's by design — chain further or call `->toArray()`. |
+| `first(fn ...)` returns `null` for falsey but valid matches like `0` | Default is `null`; you may want a sentinel | Pass an explicit default: `first($cb, $sentinel)`. |
+
+## Cheat sheet
+
+```php
+Collection::make($items)
+    ->filter(fn($x) => $x['active'])
+    ->map(fn($x) => $x['email'])
+    ->unique()
+    ->sort()
+    ->values()
+    ->all();
+
+// Aggregates
+Collection::make($items)->sum('amount');
+Collection::make($items)->groupBy('country')->map->count();   // (not supported; see real example)
+
+// Iteration
+foreach (Collection::make($items) as $item) { … }
+count($collection);
+$collection[0];
+return $collection;          // JSON-serialised automatically
+```
+
+[Security →](security)

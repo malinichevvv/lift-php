@@ -1,629 +1,715 @@
 ---
 layout: page
 title: Database
-nav_order: 10
+nav_order: 18
 ---
 
 # Database
 
-Lift includes a PDO-backed database layer: a connection class, a fluent query builder, an active-record model, migrations with a schema builder, and opt-in soft deletes and local query scopes.
+Lift ships a small but real database layer on top of PDO: a fluent query builder, schema/migrations, an optional active-record model, soft deletes, pagination, and multi-connection support. **MySQL, PostgreSQL, and SQLite** are supported out of the box.
 
----
+> Mental model: everything starts from a `Connection` (one per database). `$db->table('users')` gives you a fluent `QueryBuilder`. `Schema` runs DDL through the same connection. `Model` is a thin object wrapper around the builder — you can ignore it entirely if you prefer query-builder style.
 
-## Connection
+## 1. Connect
 
-`Connection` wraps PDO and adds a fluent query builder entry point and an optional query listener for debugging.
+The cleanest way: build a `Connection` once and put it in the container.
 
 ```php
 use Lift\Database\Connection;
 
-// Explicit DSN
-$db = new Connection('mysql:host=127.0.0.1;dbname=app;charset=utf8mb4', 'root', 'secret');
-
-// From config array
-$db = Connection::fromConfig([
-    'driver'   => 'mysql',         // mysql | pgsql | sqlite
+$app->singleton(Connection::class, fn() => Connection::fromConfig([
+    'driver'   => 'mysql',          // mysql | mariadb | pgsql | sqlite
     'host'     => '127.0.0.1',
     'port'     => 3306,
-    'database' => 'app',
-    'username' => 'root',
-    'password' => 'secret',
+    'database' => 'myapp',
+    'username' => 'app',
+    'password' => $_ENV['DB_PASS'],
     'charset'  => 'utf8mb4',
-]);
+]));
+```
 
-// SQLite in-memory (tests)
+SQLite (great for prototypes & tests):
+
+```php
+Connection::fromConfig([
+    'driver'   => 'sqlite',
+    'database' => __DIR__ . '/../database.sqlite',   // or ':memory:'
+]);
+```
+
+Then inject anywhere:
+
+```php
+class UserRepository
+{
+    public function __construct(private readonly Connection $db) {}
+
+    public function all(): array
+    {
+        return $this->db->table('users')->orderBy('id')->get();
+    }
+}
+```
+
+Or build one directly when you don't want DI yet:
+
+```php
 $db = new Connection('sqlite::memory:');
 ```
 
-### Raw queries
+PDO error mode is set to `ERRMODE_EXCEPTION` and emulated prepares are off — failures throw `PDOException` / `RuntimeException` with the real driver message.
+
+### Multiple connections
+
+`DatabaseManager` keeps named connections lazy:
 
 ```php
-// SELECT — returns all rows as associative arrays
-$users = $db->select('SELECT * FROM users WHERE active = ?', [1]);
+use Lift\Database\DatabaseManager;
 
-// SELECT — returns first row or null
-$user = $db->selectOne('SELECT * FROM users WHERE id = ?', [42]);
+$db = DatabaseManager::fromConfig([
+    'default' => 'main',
+    'connections' => [
+        'main'      => ['driver' => 'mysql',  'host' => '...', 'database' => 'app'],
+        'analytics' => ['driver' => 'pgsql', 'host' => '...', 'database' => 'analytics'],
+        'cache_db'  => ['driver' => 'sqlite', 'database' => '/tmp/cache.sqlite'],
+    ],
+]);
 
-// SELECT — returns a single scalar value
-$count = $db->value('SELECT COUNT(*) FROM orders WHERE user_id = ?', [42]);
-
-// INSERT / UPDATE / DELETE — returns affected row count
-$affected = $db->execute('UPDATE users SET active = 0 WHERE id = ?', [42]);
-
-// Last inserted auto-increment ID
-$id = $db->lastInsertId();
+$users    = $db->table('users')->get();              // default = main
+$events   = $db->table('events', 'analytics')->count();
 ```
 
-### Transactions
+Only the first call to `table('…', 'analytics')` opens the second PDO.
+
+## 2. Query builder — reads
+
+Start a query with `$db->table('foo')`. Every method returns `$this`, so chain them.
 
 ```php
-// Callback form — auto commit / rollback
-$result = $db->transaction(function (Connection $db) {
-    $orderId = $db->table('orders')->insert([...]);
-    $db->table('items')->insert(['order_id' => $orderId, ...]);
+$users = $db->table('users')
+    ->select('id', 'name', 'email')
+    ->where('active', 1)
+    ->where('age', '>=', 18)
+    ->orderBy('name')
+    ->limit(20)
+    ->get();              // [['id' => 1, …], …]
+```
+
+### Selecting
+
+```php
+->select('id', 'name')
+->addSelect('email')         // append more columns
+->distinct()
+```
+
+By default `SELECT *`.
+
+### Where clauses
+
+```php
+->where('status', 'active')                 // status = 'active'  (2-arg form)
+->where('age',    '>=',  18)                // age >= 18
+->where('name',   'LIKE', 'Al%')
+
+->orWhere('status', 'pending')
+
+->whereIn   ('id',  [1, 2, 3])
+->whereNotIn('id',  $bannedIds)
+
+->whereNull   ('deleted_at')
+->whereNotNull('verified_at')
+
+->whereBetween('age', 18, 65)
+
+->whereRaw('json_extract(meta, "$.role") = ?', ['admin'])
+```
+
+`where('column', null)` is a shortcut for `whereNull('column')`. The supported operators are `=`, `<`, `>`, `<=`, `>=`, `<>`, `!=`, `LIKE`, `NOT LIKE`, `ILIKE` — invalid ones throw `InvalidArgumentException` (which prevents SQL injection through the operator argument).
+
+> **Never** interpolate user input into column/table names. Values are bound parameters automatically; identifiers go through `Grammar::wrap()` and only accept simple names.
+
+### JOINs
+
+```php
+$db->table('orders')
+    ->select('orders.id', 'orders.total', 'users.email')
+    ->join     ('users', 'orders.user_id', '=', 'users.id')
+    ->leftJoin ('addresses', 'orders.address_id', '=', 'addresses.id')
+    ->rightJoin('payments',  'orders.id',         '=', 'payments.order_id')
+    ->where('orders.status', 'paid')
+    ->get();
+```
+
+### Grouping / ordering / paging
+
+```php
+->groupBy('status', 'country')
+->having('count', '>', 5)
+
+->orderBy('created_at', 'DESC')
+->orderByDesc('id')
+->latest('created_at')   // ORDER BY created_at DESC
+->oldest('created_at')   // ORDER BY created_at ASC
+
+->limit(20)
+->offset(40)
+->take(20)               // alias for limit
+->skip(40)               // alias for offset
+```
+
+### Fetching
+
+```php
+->get();              // array of rows
+->first();            // first row or null
+->value('email');     // single scalar from first row
+->pluck('email');     // array of one column from all matching rows
+->exists();           // bool
+->doesntExist();      // bool
+
+->count();            // int
+->count('email');     // count non-null emails
+->sum('amount');
+->avg('rating');
+->min('price');
+->max('price');
+```
+
+### See the SQL without running it
+
+```php
+$sql      = $db->table('users')->where('active', 1)->toSql();    // string
+$bindings = $db->table('users')->where('active', 1)->getBindings(); // [1]
+```
+
+Great for debugging and writing tests that don't hit the DB.
+
+## 3. Query builder — writes
+
+```php
+// INSERT — returns the last insert ID (string|false)
+$id = $db->table('users')->insert([
+    'name'  => 'Alice',
+    'email' => 'a@b.c',
+]);
+
+// Bulk INSERT — single round-trip, no return value
+$db->table('logs')->insertMany([
+    ['level' => 'info',  'msg' => 'one'],
+    ['level' => 'error', 'msg' => 'two'],
+]);
+
+// UPDATE — returns affected row count
+$db->table('users')
+    ->where('id', 42)
+    ->update(['name' => 'Bobby', 'updated_at' => date('Y-m-d H:i:s')]);
+
+// DELETE — returns affected row count
+$db->table('sessions')->where('expires_at', '<', date('Y-m-d H:i:s'))->delete();
+```
+
+Calling `update()` / `delete()` **without** any `where()` will affect every row. Always double-check.
+
+## 4. Pagination
+
+```php
+$page = $db->table('posts')
+    ->where('published', 1)
+    ->orderBy('created_at', 'DESC')
+    ->paginate(page: 2, perPage: 15, path: '/posts');
+
+return Response::json($page);
+```
+
+Returns a `Paginator` that implements `JsonSerializable`, so handing it to `Response::json()` produces:
+
+```json
+{
+  "data":         [ /* 15 rows */ ],
+  "total":        324,
+  "per_page":     15,
+  "current_page": 2,
+  "last_page":    22,
+  "from":         16,
+  "to":           30
+}
+```
+
+Other methods:
+
+```php
+$page->items();          // raw row array
+$page->total();
+$page->currentPage();
+$page->lastPage();
+$page->hasMorePages();
+$page->onFirstPage();
+$page->links();          // simple HTML pagination bar with «Prev / 1 2 … / Next»
+```
+
+`$page->links()` is intentionally minimal — render your own HTML if you want a fancier control.
+
+## 5. Chunking — large result sets
+
+When you can't load everything into RAM:
+
+```php
+$db->table('users')
+    ->orderBy('id')
+    ->chunk(500, function (array $rows, int $page) use ($mailer) {
+        foreach ($rows as $row) {
+            $mailer->send($row['email'], 'Newsletter');
+        }
+        // return false to stop early
+    });
+```
+
+Lift loads 500 rows at a time and calls your callback. Keep an `orderBy('id')` (or another stable column) — otherwise you'll skip / re-process rows when the DB reorders results.
+
+## 6. Transactions
+
+The closure form is recommended — it commits on success and rolls back on any exception:
+
+```php
+$id = $db->transaction(function (Connection $db) {
+    $orderId = $db->table('orders')->insert([
+        'user_id' => 42,
+        'total'   => 100.0,
+    ]);
+    $db->table('items')->insertMany([
+        ['order_id' => $orderId, 'sku' => 'A1', 'qty' => 1],
+        ['order_id' => $orderId, 'sku' => 'B2', 'qty' => 2],
+    ]);
     return $orderId;
 });
+```
 
-// Manual form
+Manual form when you need finer control:
+
+```php
 $db->beginTransaction();
 try {
-    $db->execute('UPDATE accounts SET balance = balance - ? WHERE id = ?', [100, 1]);
-    $db->execute('UPDATE accounts SET balance = balance + ? WHERE id = ?', [100, 2]);
+    // …
     $db->commit();
 } catch (\Throwable $e) {
     $db->rollBack();
     throw $e;
 }
 
-$db->inTransaction(); // bool
+$db->inTransaction();   // bool
 ```
 
-### Query listener
+## 7. Pessimistic locking
 
-Register a callable that receives `($sql, $bindings, $ms)` after every query. Use this to feed the debug toolbar or a slow-query logger.
+When two processes might race over the same rows (queue, counter, …):
 
 ```php
-// Debug toolbar integration
-$db->onQuery([$collector, 'recordQuery']);
+$db->transaction(function (Connection $db) {
+    $job = $db->table('jobs')
+        ->where('status', 'pending')
+        ->orderBy('id')
+        ->forUpdate(skipLocked: true)   // FOR UPDATE SKIP LOCKED (mysql 8 / pg)
+        ->first();
 
-// Custom slow-query logger
+    if ($job !== null) {
+        $db->table('jobs')->where('id', $job['id'])->update(['status' => 'running']);
+    }
+});
+```
+
+| Method                       | SQL                                                |
+|------------------------------|----------------------------------------------------|
+| `forUpdate()`                | `... FOR UPDATE`                                   |
+| `forUpdate(skipLocked: true)`| `... FOR UPDATE SKIP LOCKED`                       |
+| `sharedLock()`               | `... FOR SHARE` (PG) / `LOCK IN SHARE MODE` (MySQL)|
+
+> On SQLite the lock clause is silently omitted — SQLite locks the whole DB during a write transaction anyway.
+
+## 8. Advisory (named) locks
+
+For "only one process should run this at a time" without table locks:
+
+```php
+// Block until acquired or timeout in seconds
+$db->withAdvisoryLock('daily-report', function (Connection $db) {
+    generateReport($db);
+}, timeout: 30);
+
+// Manual
+if ($db->advisoryLock('export', timeout: 10)) {
+    try {
+        // …
+    } finally {
+        $db->advisoryUnlock('export');
+    }
+}
+```
+
+Supported on MySQL & PostgreSQL. SQLite throws `RuntimeException`.
+
+## 9. Raw queries
+
+When the builder can't express what you need:
+
+```php
+$rows  = $db->select   ('SELECT * FROM users WHERE id IN (?, ?, ?)', [1, 2, 3]);
+$row   = $db->selectOne('SELECT * FROM users WHERE id = ?', [42]);
+$count = $db->value    ('SELECT COUNT(*) FROM users WHERE active = ?', [1]);
+
+$affected = $db->execute(
+    'UPDATE users SET last_seen = ? WHERE id = ?',
+    [time(), 42],
+);
+
+$lastId = $db->lastInsertId();
+```
+
+Always pass user input as bound parameters (`?` placeholders + `$bindings` array). **Never** `"WHERE id = " . $_GET['id']`.
+
+## 10. Query listener (debug / metrics)
+
+Subscribe to every executed query:
+
+```php
 $db->onQuery(function (string $sql, array $bindings, float $ms): void {
-    if ($ms > 200) {
-        $logger->warning('Slow query', ['sql' => $sql, 'ms' => $ms]);
-    }
+    error_log(sprintf('[%.1f ms] %s | %s', $ms, $sql, json_encode($bindings)));
 });
 ```
 
----
+The debug toolbar uses this internally. Slow-query alerting is two lines on top.
 
-## Query Builder
+## 11. Schema & migrations
 
-Start a fluent query with `$db->table(name)`.
+Two pieces:
+- `Schema` — DDL helper (CREATE / ALTER / DROP).
+- `Migrator` — versioned change runner.
 
-```php
-$db->table('users')
-   ->select('id', 'name', 'email')
-   ->where('active', 1)
-   ->orderBy('name')
-   ->limit(20)
-   ->get();
-```
-
-### Selecting columns
+### Schema (without migrations)
 
 ```php
-->select('id', 'name')         // replace column list
-->addSelect('role')            // append to column list
-->distinct()                   // add DISTINCT
-```
+use Lift\Database\Schema\Schema;
 
-### WHERE clauses
+$schema = new Schema($db);
 
-```php
-->where('active', 1)                    // column = value
-->where('age', '>=', 18)               // column op value
-->where('email', null)                  // column IS NULL
-->orWhere('role', 'admin')
-
-->whereIn('id', [1, 2, 3])
-->whereNotIn('status', ['banned', 'deleted'])
-
-->whereNull('deleted_at')
-->whereNotNull('email_verified_at')
-
-->whereBetween('age', 18, 65)
-
-->whereRaw('YEAR(created_at) = ?', [2024])
-->orWhere('id', 5)
-```
-
-### JOINs
-
-```php
-->join('posts', 'users.id', '=', 'posts.user_id')
-->leftJoin('profiles', 'users.id', '=', 'profiles.user_id')
-->rightJoin('roles', 'users.role_id', '=', 'roles.id')
-```
-
-### Grouping and aggregates
-
-```php
-->groupBy('department', 'role')
-->having('count', '>', 5)
-
-// Aggregate methods (execute immediately)
-$count = $db->table('users')->where('active', 1)->count();
-$total = $db->table('orders')->sum('amount');
-$avg   = $db->table('ratings')->avg('score');
-$min   = $db->table('products')->min('price');
-$max   = $db->table('products')->max('price');
-```
-
-### Ordering and pagination
-
-```php
-->orderBy('name')                // ASC
-->orderBy('created_at', 'DESC')
-->orderByDesc('created_at')
-->latest()                      // orderBy('created_at', 'DESC')
-->oldest()                      // orderBy('created_at', 'ASC')
-->limit(10)
-->offset(20)
-->skip(20)->take(10)            // aliases for offset/limit
-```
-
-### Fetching results
-
-```php
-->get()           // array of associative arrays (all rows)
-->first()         // first row or null
-->value('email')  // single scalar value
-->pluck('name')   // flat array of one column
-->exists()        // bool
-->doesntExist()   // bool
-->count()         // int
-```
-
-### Pagination
-
-```php
-$page      = (int) ($request->getQueryParams()['page'] ?? 1);
-$paginator = $db->table('posts')
-                ->where('published', 1)
-                ->orderByDesc('created_at')
-                ->paginate($page, perPage: 15, path: '/posts');
-
-$paginator->items();       // rows for this page
-$paginator->currentPage(); // int
-$paginator->lastPage();    // int
-$paginator->total();       // total row count
-$paginator->links();       // HTML pagination links
-```
-
-### Chunking large result sets
-
-```php
-$db->table('users')->chunk(100, function (array $rows): void {
-    foreach ($rows as $row) {
-        // process $row
-    }
+$schema->create('users', function ($table) {
+    $table->id();
+    $table->string('email', 200)->unique();
+    $table->string('password');
+    $table->boolean('active')->default(true);
+    $table->json('settings')->nullable();
+    $table->timestamps();        // created_at + updated_at
 });
-```
 
-### Writing data
-
-```php
-// INSERT — returns last insert ID (string) or false
-$id = $db->table('users')->insert(['name' => 'Alice', 'email' => 'alice@example.com']);
-
-// INSERT many rows at once
-$db->table('logs')->insertMany([
-    ['message' => 'Started', 'level' => 'info'],
-    ['message' => 'Done',    'level' => 'info'],
-]);
-
-// UPDATE — returns affected row count
-$affected = $db->table('users')->where('id', 42)->update(['active' => 0]);
-
-// DELETE — returns affected row count
-$deleted = $db->table('sessions')->where('expires_at', '<', date('Y-m-d H:i:s'))->delete();
-```
-
-### Inspecting the generated SQL
-
-```php
-$qb = $db->table('users')->where('active', 1)->orderBy('name');
-echo $qb->toSql();         // SELECT * FROM `users` WHERE `active` = ? ORDER BY `name` ASC
-print_r($qb->getBindings()); // [1]
-```
-
----
-
-## Model
-
-Extend `Model` for a lightweight active-record interface.
-
-```php
-use Lift\Database\Model;
-
-final class User extends Model
-{
-    protected static string $table = 'users';
-    protected array $fillable = ['name', 'email', 'role'];
-}
-
-// One-time setup at bootstrap
-User::setConnection($db);
-```
-
-### Querying
-
-```php
-// Returns a QueryBuilder scoped to the model's table
-$users = User::query()->where('active', 1)->get();
-
-// Find by primary key
-$user = User::find(42);          // ?User
-$user = User::find('abc-uuid');  // ?User (string PKs work too)
-
-// Static helpers
-$users = User::query()->orderBy('name')->get(); // raw rows as arrays
-```
-
-### Creating and saving
-
-```php
-// Create (insert) in one step
-$user = User::create(['name' => 'Alice', 'email' => 'alice@example.com']);
-
-// Or construct then save
-$user = new User(['name' => 'Bob']);
-$user->save(); // INSERT
-
-$user->set('email', 'bob@example.com');
-$user->save(); // UPDATE (because $user->exists === true)
-```
-
-### Reading and writing attributes
-
-```php
-$user->get('name');           // attribute read
-$user->set('name', 'Charlie'); // attribute write
-$user->fill(['name' => 'Dave', 'email' => 'dave@example.com']); // mass-assign
-
-$user->getKey();              // value of the primary key
-$user->isDirty();             // bool — attributes changed since load?
-$user->getDirty();            // array of changed attributes
-$user->getOriginal();         // attributes as loaded from DB
-```
-
-### Deleting
-
-```php
-$user->delete();  // DELETE WHERE id = ?
-```
-
-### Array / JSON access
-
-`Model` implements `ArrayAccess` and `JsonSerializable`:
-
-```php
-$user['name'] = 'Alice';
-echo $user['email'];
-json_encode($user); // {"id":1,"name":"Alice","email":"alice@example.com"}
-```
-
-### Table name convention
-
-When `$table` is not declared, the name is derived from the class name: `CamelCase` → `snake_cases` (pluralized).
-
-```php
-final class BlogPost extends Model {}
-// table: blog_posts
-```
-
-### Custom primary key
-
-```php
-final class Token extends Model
-{
-    protected static string $table = 'tokens';
-    protected static string $primaryKey = 'token';
-}
-```
-
-### Model events
-
-```php
-use Lift\Database\Events\{ModelCreating, ModelCreated, ModelUpdating, ModelUpdated, ModelDeleting, ModelDeleted};
-use Lift\Events\EventDispatcher;
-
-Model::setEventDispatcher($dispatcher);
-
-$dispatcher->listen(ModelCreating::class, function (ModelCreating $event): void {
-    // return nothing to allow; call $event->stopPropagation() to cancel
+$schema->alter('users', function ($table) {
+    $table->string('avatar_url', 500)->nullable();
 });
-$dispatcher->listen(ModelCreated::class, function (ModelCreated $event): void {
-    cache()->forget('user_list');
-});
+
+$schema->dropIfExists('old_table');
+$schema->rename('users_v1', 'users');
+
+$schema->hasTable('users');       // bool
+$schema->hasColumn('users', 'email');
 ```
 
-`*ing` events are stoppable: calling `$event->stopPropagation()` inside a listener cancels the operation.
-
----
-
-## Soft Deletes
-
-Add the `SoftDeletes` trait to opt into soft-delete behaviour. `delete()` sets `deleted_at` to the current timestamp instead of removing the row. All default queries exclude soft-deleted records automatically.
+### Column types
 
 ```php
-use Lift\Database\Model;
-use Lift\Database\SoftDeletes;
+$table->id();           $table->bigIncrements('order_id');
+$table->string($n, 200); $table->char($n, 32);
+$table->text($n);       $table->mediumText($n);  $table->longText($n);
 
-final class Post extends Model
-{
-    use SoftDeletes;
+$table->integer($n);    $table->bigInteger($n);  $table->smallInteger($n);
+$table->tinyInteger($n);$table->decimal($n, 10, 2);
+$table->float($n);      $table->double($n);
 
-    protected static string $table = 'posts';
-    protected array $fillable = ['title', 'body'];
-}
+$table->boolean($n);    $table->binary($n);
+$table->date($n);       $table->dateTime($n);    $table->time($n);
+$table->timestamp($n);  $table->timestamps();    // created_at + updated_at
+$table->softDeletes();  // deleted_at (nullable)
+
+$table->json($n);
+$table->uuid($n);
+$table->enum($n, ['admin','user']);
+$table->foreignId($n);  // unsigned big int suitable for FK
 ```
 
-### Usage
+Per-column modifiers:
 
 ```php
-$post = Post::find(1);
-$post->delete();           // sets deleted_at; row stays in DB
-
-Post::find(1);             // null — soft-deleted is excluded
-Post::query()->get();      // only non-deleted rows
-
-Post::withTrashed()->get();  // all rows, including soft-deleted
-Post::onlyTrashed()->get();  // only soft-deleted rows
-
-$post->restore();          // clears deleted_at; back to normal
-$post->trashed();          // bool — currently soft-deleted?
-
-$post->forceDelete();      // permanently removes the row
+->nullable()
+->default($value)
+->index()
+->unique()
+->primary()
+->after('email')                 // MySQL only
+->foreign('users', 'id')         // FK → users.id  (sets up the constraint)
+->onDelete('cascade')->onUpdate('cascade')
 ```
 
-### Custom column name
+### Migrations
 
-Override `$deletedAtColumn` if your table uses a different column:
-
-```php
-final class Order extends Model
-{
-    use SoftDeletes;
-
-    protected static string $deletedAtColumn = 'archived_at';
-}
-```
-
-### Required schema
+Each migration is a single PHP file returning a `Migration` instance:
 
 ```php
-$schema->alter('posts', function (Blueprint $t): void {
-    $t->timestamp('deleted_at')->nullable();
-});
-```
-
----
-
-## Local Scopes
-
-Define reusable query constraints as `scope{Name}(QueryBuilder $query): void` methods, then call them as static methods on the model.
-
-```php
-use Lift\Database\Model;
-use Lift\Database\QueryBuilder;
-
-final class User extends Model
-{
-    protected static string $table = 'users';
-
-    public function scopeActive(QueryBuilder $query): void
-    {
-        $query->where('active', 1);
-    }
-
-    public function scopeRole(QueryBuilder $query, string $role): void
-    {
-        $query->where('role', $role);
-    }
-}
-```
-
-```php
-// Usage — scopes return a QueryBuilder, so they're fully chainable
-User::active()->get();
-User::role('admin')->get();
-User::active()->role('admin')->orderBy('name')->limit(10)->get();
-```
-
-Arguments after `$query` are forwarded from the static call:
-
-```php
-// In model
-public function scopeCreatedAfter(QueryBuilder $query, string $date): void
-{
-    $query->where('created_at', '>=', $date);
-}
-
-// Usage
-User::createdAfter('2024-01-01')->get();
-```
-
----
-
-## Migrations
-
-Migrations version your schema as a sequence of ordered PHP files. Each file returns an anonymous class extending `Migration`.
-
-### Writing a migration
-
-```php
-// database/migrations/2024_01_15_000000_create_users_table.php
+// database/migrations/2025_05_14_120000_create_posts_table.php
 use Lift\Database\Migration;
-use Lift\Database\Schema\Blueprint;
 use Lift\Database\Schema\Schema;
 
 return new class($db) extends Migration {
     public function up(): void
     {
-        (new Schema($this->db))->create('users', function (Blueprint $t): void {
+        (new Schema($this->db))->create('posts', function ($t) {
             $t->id();
-            $t->string('name');
-            $t->string('email')->unique();
-            $t->boolean('active')->default(true);
+            $t->string('title');
+            $t->text('body');
+            $t->foreignId('user_id')->index();
             $t->timestamps();
         });
     }
 
     public function down(): void
     {
-        (new Schema($this->db))->dropIfExists('users');
+        (new Schema($this->db))->dropIfExists('posts');
     }
 };
 ```
 
-### Running migrations
+The file basename (without `.php`) becomes the migration name and is what's stored in the `migrations` table.
+
+Run them:
 
 ```php
 use Lift\Database\Migrator;
 
-$migrator = new Migrator($db, __DIR__ . '/database/migrations');
+$migrator = new Migrator($db, __DIR__ . '/../database/migrations');
 
-$migrator->migrate();                // run all pending migrations
-$migrator->rollback();              // roll back the last batch
-$migrator->rollback(steps: 3);      // roll back the last 3 batches
-$migrator->reset();                 // roll back all batches
-$migrator->fresh();                 // reset + migrate
-$migrator->status();                // array of all migrations with ran/pending state
+$migrator->migrate();     // run all pending — returns array of names
+$migrator->rollback();    // roll back the last batch
+$migrator->rollback(3);   // roll back the last 3 batches
+$migrator->reset();       // roll back everything
+$migrator->fresh();       // reset + migrate (start over)
+$migrator->status();      // [['migration'=>'...','ran'=>bool,'batch'=>int|null], …]
 ```
 
----
+Via the CLI (`vendor/bin/lift`):
 
-## Schema Builder
+```bash
+lift make:migration create_posts_table
+lift migrate
+lift migrate:rollback
+lift migrate:status
+lift migrate:fresh
+```
 
-`Schema` and `Blueprint` build DDL statements for MySQL, PostgreSQL, and SQLite.
+`Migrator` creates a `migrations` table the first time it runs — no separate setup step.
 
-### Creating a table
+> Best practice: keep migrations **append-only** in main. Never edit a migration that's already been deployed; write a new one.
+
+## 12. Model (active record)
+
+Optional thin wrapper. Skip this section entirely if you prefer query-builder style.
 
 ```php
-use Lift\Database\Schema\Blueprint;
-use Lift\Database\Schema\Schema;
+use Lift\Database\Model;
 
-$schema = new Schema($db);
+final class User extends Model
+{
+    protected static string $table      = 'users';
+    protected static string $primaryKey = 'id';
+    protected array $fillable           = ['name', 'email', 'role'];
+}
 
-$schema->create('products', function (Blueprint $t): void {
-    $t->id();
-    $t->string('name');
-    $t->string('sku', 64)->unique();
-    $t->decimal('price', precision: 10, scale: 2);
-    $t->integer('stock')->default(0);
-    $t->boolean('published')->default(false);
-    $t->text('description')->nullable();
-    $t->timestamps();
+User::setConnection($db);
+
+// CRUD
+$user = User::find(1);
+$user = User::create(['name' => 'Alice', 'email' => 'a@b.c']);
+$user->set('name', 'Updated')->save();
+$user->delete();
+
+// Query
+$users  = User::query()->where('active', 1)->get();   // raw rows
+$active = User::query()->where('active', 1)->first();
+
+// Bulk
+foreach ($users as $row) {
+    $user = User::hydrate($row);     // wrap row in a Model without re-querying
+}
+
+// Dirty tracking
+$user->set('name', 'X');
+$user->dirty();                       // ['name' => 'X']
+$user->save();                        // only updates `name`
+```
+
+### Mass-assignment safety
+
+Either an allow-list (`$fillable`) or a deny-list (`$guarded`) — never both:
+
+```php
+protected array $fillable = ['name', 'email'];   // ONLY these are mass-assignable
+
+// OR (mutually exclusive):
+protected array $guarded = ['id', 'is_admin'];   // everything else IS mass-assignable
+```
+
+Calling `new User($request->json())` only copies allowed keys; the rest are silently dropped.
+
+### Local scopes
+
+Define `scope{Name}` methods to bundle reusable filters:
+
+```php
+class Post extends Model
+{
+    public function scopePublished(QueryBuilder $q): void
+    {
+        $q->where('published', 1)->whereNotNull('published_at');
+    }
+}
+
+Post::published()->where('author_id', 7)->get();    // calls scopePublished, then chains
+```
+
+### Relationships
+
+Use the helpers from inside model methods you define yourself:
+
+```php
+class User extends Model
+{
+    public function posts(): array              { return $this->hasMany(Post::class); }
+    public function profile(): ?Profile         { return $this->hasOne(Profile::class); }
+}
+
+class Post extends Model
+{
+    public function user(): ?User               { return $this->belongsTo(User::class); }
+}
+
+$user = User::find(1);
+foreach ($user->posts() as $post) { … }
+```
+
+The helpers run a **separate query each call** — fine for the simple case, but watch out for N+1 in loops. For the N+1 pattern, drop down to a raw join:
+
+```php
+$rows = $db->table('posts')
+    ->join('users', 'posts.user_id', '=', 'users.id')
+    ->select('posts.*', 'users.email as author_email')
+    ->get();
+```
+
+### Model lifecycle events
+
+Hook into create / update / delete via the event dispatcher:
+
+```php
+use Lift\Database\Events\ModelCreating;
+
+Model::setEventDispatcher($app->events());
+
+$app->events()->listen(ModelCreating::class, function (ModelCreating $e) {
+    if ($e->model instanceof User && empty($e->model->get('uuid'))) {
+        $e->model->set('uuid', Uuid::v7());
+    }
 });
 ```
 
-### Altering a table
+`Model{Creating, Created, Updating, Updated, Deleting, Deleted}` events. The `*ing` ones are *stoppable* — call `$e->stopPropagation()` to cancel.
+
+### Soft deletes
+
+Opt-in trait. Sets `deleted_at` instead of deleting; auto-scopes queries to exclude soft-deleted:
 
 ```php
-$schema->alter('products', function (Blueprint $t): void {
-    $t->string('currency', 3)->default('USD');
-    $t->index('published');
-});
+use Lift\Database\Model;
+use Lift\Database\SoftDeletes;
+
+class Post extends Model
+{
+    use SoftDeletes;
+
+    protected static string $table = 'posts';
+}
+
+$post = Post::find(1);
+$post->delete();                // sets deleted_at; row stays
+Post::find(1);                  // null — soft-deleted excluded
+
+Post::withTrashed()->get();     // include soft-deleted
+Post::onlyTrashed()->get();     // only soft-deleted
+
+$post->restore();               // clear deleted_at
+$post->forceDelete();           // permanently DELETE FROM …
+$post->trashed();               // bool
 ```
 
-### Other schema operations
+Don't forget to add the column in your migration:
 
 ```php
-$schema->drop('old_table');
-$schema->dropIfExists('temp_table');
-$schema->rename('old_name', 'new_name');
-$schema->hasTable('users');           // bool
-$schema->hasColumn('users', 'email'); // bool
+$table->softDeletes();   // adds nullable `deleted_at` timestamp
 ```
 
-### Blueprint column types
+## 13. JSON output
 
-| Method | SQL type |
-|--------|----------|
-| `id()` | `BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY` |
-| `bigIncrements()` | alias for `id()` |
-| `string(name, length=255)` | `VARCHAR(n)` |
-| `char(name, length=100)` | `CHAR(n)` |
-| `text(name)` | `TEXT` |
-| `mediumText(name)` | `MEDIUMTEXT` |
-| `longText(name)` | `LONGTEXT` |
-| `integer(name)` | `INT` |
-| `bigInteger(name)` | `BIGINT` |
-| `smallInteger(name)` | `SMALLINT` |
-| `tinyInteger(name)` | `TINYINT` |
-| `decimal(name, precision=8, scale=2)` | `DECIMAL(p,s)` |
-| `float(name)` | `FLOAT` |
-| `double(name)` | `DOUBLE` |
-| `boolean(name)` | `TINYINT(1)` |
-| `binary(name)` | `BLOB` |
-| `date(name)` | `DATE` |
-| `dateTime(name)` | `DATETIME` |
-| `timestamp(name)` | `TIMESTAMP` |
-| `timestamps()` | adds `created_at` + `updated_at` TIMESTAMP columns |
-| `time(name)` | `TIME` |
-| `json(name)` | `JSON` |
-| `uuid(name)` | `CHAR(36)` |
-| `enum(name, values[])` | `ENUM(...)` |
-| `foreignId(name)` | `BIGINT UNSIGNED` + index |
-
-### Column modifiers (chainable)
+Both `Model` and `Paginator` implement `JsonSerializable`. Return them from a handler and Lift wraps them in JSON automatically:
 
 ```php
-$t->string('email')->unique();
-$t->integer('age')->nullable();
-$t->boolean('active')->default(true);
-$t->string('code', 6)->nullable()->default(null);
+$app->get('/users/{id}', fn($req) => User::find((int) $req->param('id')));
+// → 200 JSON or 204 if the model is null
 ```
 
-### Indexes and foreign keys
+To shape the output (hide passwords, rename fields), wrap in a [JsonResource](json-resources).
+
+## Common pitfalls
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Database connection failed: SQLSTATE[…]` at boot | Bad DSN / DB down | Print `getMessage()`, check creds, network. |
+| `Invalid WHERE operator: [contains]` | Used a non-SQL operator | Stick to the operator list; use `LIKE` for substring. |
+| Update affects 0 rows but I expected 1 | Your `where()` didn't match | Re-check identifiers; cast types (`(int)$id`). |
+| Bulk insert silently does nothing | Empty array | `insertMany([])` is a no-op; the framework doesn't error. |
+| Massive `UPDATE` ran without `WHERE` | You forgot `->where(...)` | Always chain `where` first; in code review require it. |
+| `N+1` queries (one per loop iteration) | `Model::hasMany()` inside a loop | Use a single JOIN, or pre-fetch IDs and group manually. |
+| Migration order is random | File system order isn't guaranteed | Lift sorts files by name — always prefix with timestamp `YYYY_MM_DD_HHMMSS_`. |
+| `lastInsertId()` returns `0` | PostgreSQL + no sequence | Use `RETURNING id` via `selectOne` or set a sequence. |
+
+## Cheat sheet
 
 ```php
-$t->unique('email');
-$t->unique(['first_name', 'last_name'], 'idx_full_name');
-$t->index('status');
-$t->index(['country', 'city']);
+// Connect
+$db = Connection::fromConfig([...]);
 
-$t->foreignKey('user_id', 'users', 'id', onDelete: 'CASCADE');
+// Read
+$rows = $db->table('users')->where('active', 1)->orderBy('id')->get();
+$one  = $db->table('users')->where('id', 42)->first();
+
+// Write
+$id = $db->table('users')->insert([...]);
+$db->table('users')->where('id', $id)->update([...]);
+$db->table('users')->where('id', $id)->delete();
+
+// Transaction
+$db->transaction(fn($db) => /* … */);
+
+// Paginate
+$page = $db->table('users')->paginate(1, 20, '/users');
+
+// Raw
+$rows = $db->select('SELECT … WHERE x = ?', [$v]);
+
+// Schema
+(new Schema($db))->create('t', fn($t) => $t->id());
+
+// Migrate
+(new Migrator($db, __DIR__ . '/db/migrations'))->migrate();
+
+// Model
+class User extends Model { protected static string $table = 'users'; protected array $fillable = [...]; }
+User::setConnection($db);
+$user = User::find(1);
 ```
 
----
-
-## DatabaseManager
-
-`DatabaseManager` manages named connections and pools them by name.
-
-```php
-use Lift\Database\DatabaseManager;
-
-$manager = new DatabaseManager();
-
-$manager->addConnection('default', Connection::fromConfig([
-    'driver'   => 'mysql',
-    'host'     => '127.0.0.1',
-    'database' => 'app',
-    'username' => 'root',
-    'password' => 'secret',
-]));
-
-$manager->addConnection('readonly', Connection::fromConfig([
-    'driver'   => 'mysql',
-    'host'     => 'replica.example.com',
-    'database' => 'app',
-    'username' => 'readonly',
-    'password' => 'secret',
-]));
-
-$db   = $manager->connection();           // default
-$read = $manager->connection('readonly'); // named
-```
+[Validation →](validation)

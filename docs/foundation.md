@@ -1,259 +1,70 @@
 ---
-title: Application foundation
-nav_order: 18
+layout: page
+title: Application Foundation
+nav_order: 39
 ---
 
-# Application foundation
+# Application Foundation
 
-Lift keeps the core small, but includes optional base classes for common application structure: controllers, form requests, JSON resources, sessions, models, and CLI skeleton generators.
+> This page is a **navigation hub**. Its original content has been split into focused pages — each topic now lives in the best place for it.
 
-## Controllers
+---
 
-Controllers are optional. You can keep using closures or invokable classes, or extend `Lift\Http\Controller` for response helpers.
+## Controllers & routing
 
-```php
-use Lift\Http\Controller;
-use Lift\Http\Request;
-use Lift\Http\Response;
+- **[Routing](routing)** — registering routes, groups, named routes, middleware, return-value normalisation.
+- **[Attribute Routing](attribute-routing)** — `#[Get]`, `#[Post]`, `#[Group]`, `#[Middleware]` on controller methods.
+- **[Handler types](routing#handler-types)** — closures, `[Class, 'method']`, invokable classes.
 
-final class UserController extends Controller
-{
-    public function show(Request $request): Response
-    {
-        return $this->json(['id' => $request->param('id')]);
-    }
-}
-```
+## HTTP
 
-## Form requests
+- **[Request](request)** — reading input, params, headers, cookies, file uploads.
+- **[Response](response)** — JSON, HTML, redirects, streaming, cookies.
+- **[Form Requests](form-requests)** — typed, validated request objects.
+- **[JSON Resources](json-resources)** — shaping API output.
+- **[Server-Sent Events](sse)** — streaming server push.
+- **[HTTP Client](http-client)** — making outbound HTTP requests.
 
-`FormRequest` validates input and gives controllers a typed place for request rules.
+## Views & sessions
 
-```php
-use Lift\Http\FormRequest;
+- **[Views](views)** — PHP templates, layouts, sections, partials, asset URLs, view caching.
+- **[Sessions](sessions)** — file, Redis, database, and array drivers; flash messages.
 
-final class StoreUserRequest extends FormRequest
-{
-    public function rules(): array
-    {
-        return [
-            'email' => 'required|email',
-            'name' => 'required|string|max:255',
-        ];
-    }
-}
+## Error handling
 
-$form = StoreUserRequest::fromRequest($request);
-$email = $form->string('email');
-```
+- **[Errors](errors)** — exception hierarchy, `onError`, `onException`, HTTP exceptions.
+- **[Debug Toolbar](debug)** — toolbar, exception pages, SQL/log wiring for local development.
 
-## JSON resources
+## Data
 
-Resources shape models or arrays before JSON output.
+- **[Database](database)** — Connection, QueryBuilder, Schema, Migrator, Model, SoftDeletes, pessimistic locks, advisory locks.
+- **[Validation](validation)** — all rules, custom rules, `FormRequest`, `ValidationException`.
+- **[Collections](collections)** — `Collection` helper with full method reference.
+- **[Cache](cache)** — `ArrayCache`, `RedisCache` with HMAC signing, PSR-16 adapter.
+- **[Filesystem](filesystem)** — `LocalFilesystem`, `Storage` facade, upload patterns.
+- **[Redis](redis)** — `RedisClient`, raw protocol client, testing fakes.
 
-```php
-use Lift\Http\JsonResource;
+## Security
 
-final class UserResource extends JsonResource
-{
-    public function toArray(): array
-    {
-        return [
-            'id' => $this->value('id'),
-            'email' => $this->value('email'),
-        ];
-    }
-}
+- **[Security Middleware](security)** — CORS, CSRF, Rate Limiting, Security Headers.
+- **[JWT](jwt)** — sign/verify, middleware, refresh-token pattern.
+- **[Cryptography](crypto)** — AES-256-GCM encryption, Argon2id hashing, HMAC signing.
 
-return new UserResource($user);
-```
+## Services
 
-## Views
+- **[Queues](queues)** — jobs, drivers, workers, retries, failed-job tracking.
+- **[Events](events)** — PSR-14 dispatcher, listeners, model lifecycle events.
+- **[Logging](logging)** — handlers, formatters, PSR-3 integration.
+- **[Console](console)** — CLI commands, generators, the worker command.
+- **[Localization](localization)** — translations, pluralization, locale switching.
+- **[JSON-RPC 2.0](json-rpc)** — batch requests, method routing, error codes.
+- **[OpenAPI](openapi)** — generating specs from attributes and doc-blocks.
+- **[Async (Fibers)](async)** — cooperative concurrency with PHP 8.1 fibers.
 
-Lift includes a small PHP view renderer with layouts, sections, partials,
-shared parameters, escaping, and asset URLs.
+## Reference
 
-```php
-$app->views(__DIR__ . '/../views', assetBase: '/assets');
-$app->views()->share('appName', 'Lift Blog');
-
-$app->get('/', fn() => $app->view('posts.index', [
-    'posts' => $posts,
-]));
-```
-
-View files receive a `$view` helper:
-
-```php
-<?php $view->layout('layouts.app'); ?>
-
-<?php $view->section('title'); ?>Posts<?php $view->end(); ?>
-
-<link rel="stylesheet" href="<?= $view->asset('app.css') ?>">
-
-<?php foreach ($posts as $post): ?>
-    <?= $view->include('posts.card', ['post' => $post]) ?>
-<?php endforeach; ?>
-```
-
-Layout:
-
-```php
-<title><?= $view->yield('title', 'Lift') ?></title>
-<main><?= $view->content() ?></main>
-```
-
-Use `$view->e($value)` for HTML escaping.
-
-## Sessions
-
-Use `SessionMiddleware` to start a driver-backed session and expose a `Session` object on the request.
-
-```php
-use Lift\Http\Session\FileSessionStore;
-use Lift\Http\Session\Session;
-use Lift\Http\Session\SessionMiddleware;
-
-$store = new FileSessionStore(__DIR__ . '/../storage/sessions');
-$app->use(new SessionMiddleware(new Session($store)));
-
-$app->get('/me', function ($request) {
-    $session = $request->getAttribute('session');
-    return ['user_id' => $session->get('user_id')];
-});
-```
-
-Built-in stores:
-
-- `ArraySessionStore` for tests and short-lived development processes.
-- `FileSessionStore` for simple persistent local storage.
-- `DatabaseSessionStore` for SQL-backed sessions.
-- `RedisSessionStore` for high-throughput distributed sessions.
-- `MemcachedSessionStore` for distributed sessions through ext-memcached.
-
-Session classes live under `Lift\Http\Session`. The previous `Lift\Http\Session`,
-`Lift\Http\FileSessionStore`, and similar names remain available as deprecated
-compatibility aliases.
-
-The `SessionStoreInterface` contract can be implemented for any custom backend.
-
-## Environment files
-
-Lift includes a small dependency-free `.env` loader and typed environment reader.
-
-```php
-use Lift\Config\Env;
-
-$app->loadEnv(__DIR__ . '/../.env');
-
-$debug = Env::bool('APP_DEBUG', false);
-$port = Env::int('APP_PORT', 8000);
-$name = Env::string('APP_NAME', 'Lift');
-$environment = $app->environment();
-```
-
-Supported `.env` syntax:
-
-```dotenv
-APP_ENV=local
-APP_DEBUG=true
-APP_NAME="Lift App"
-export APP_PORT=8080
-```
-
-Existing process variables are not overwritten unless `overwrite: true` is passed.
-
-## Models
-
-`Model` is a lightweight active-record style helper over the existing query builder.
-
-```php
-use Lift\Database\Model;
-
-final class User extends Model
-{
-    protected static string $table = 'users';
-    protected array $fillable = ['name', 'email'];
-}
-
-User::setConnection($db);
-$user = User::find(1);
-$user->set('name', 'Updated')->save();
-$user->delete();
-```
-
-For complex SQL, keep using `Connection::table()` and `QueryBuilder` directly.
-
-## Database manager
-
-`DatabaseManager` keeps named connections lazy. PDO connections are created only
-when first used.
-
-```php
-use Lift\Database\DatabaseManager;
-
-$db = DatabaseManager::fromConfig([
-    'default' => 'main',
-    'connections' => [
-        'main' => ['driver' => 'sqlite', 'database' => __DIR__ . '/../database.sqlite'],
-        'analytics' => ['driver' => 'pgsql', 'host' => '127.0.0.1', 'database' => 'analytics'],
-    ],
-]);
-
-$users = $db->table('users')->get();
-$events = $db->table('events', 'analytics')->count();
-```
-
-## Migrations
-
-Migrations are explicit PHP classes returning a `Migration` instance.
-
-```php
-use Lift\Database\Migration;
-
-return new class($db) extends Migration {
-    public function up(): void
-    {
-        $this->db->execute('CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT)');
-    }
-
-    public function down(): void
-    {
-        $this->db->execute('DROP TABLE users');
-    }
-};
-```
-
-Run them through `Migrator` or register `MigrateCommand` in your CLI bootstrap:
-
-```php
-$migrator = new Migrator($db, __DIR__ . '/../database/migrations');
-$migrator->migrate();
-$migrator->rollback();
-```
-
-For database sessions:
-
-```php
-$migrator->createSessionsTable();
-```
-
-## CLI skeletons
-
-The `lift` binary includes generators:
-
-```bash
-lift make:controller UserController
-lift make:request StoreUserRequest
-lift make:resource UserResource
-lift make:model User
-lift make:middleware AuthMiddleware
-```
-
-Options:
-
-```bash
-lift make:controller AdminController --namespace=App\\Admin --path=src
-```
-
-Generated files are intentionally plain PHP and can be edited freely.
+- **[Configuration](configuration)** — environment variables, `.env`, config arrays.
+- **[UUID & ULID](uuid)** — v4, v7, ULID, binary encoding.
+- **[DI Container](container)** — bindings, singletons, auto-wiring, contextual binding.
+- **[Testing](testing)** — `TestCase`, `TestResponse`, request helpers.
+- **[Framework Comparison](comparison)** — Lift vs Slim vs Lumen vs Laravel Micro.

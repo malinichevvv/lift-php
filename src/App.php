@@ -309,6 +309,30 @@ final class App
         return $this;
     }
 
+    /**
+     * Load every PHP / YAML file in a directory as a named config group.
+     *
+     * The filename (without extension) becomes the top-level key, so
+     * `config/database.php` → `configuration()->get('database.host')`.
+     *
+     * ```php
+     * $app->configure(__DIR__ . '/config');
+     * ```
+     */
+    public function configure(string $directory): self
+    {
+        $directory = rtrim($directory, '/\\');
+        foreach (glob("{$directory}/*.{php,yaml,yml}", GLOB_BRACE) ?: [] as $file) {
+            $key    = pathinfo($file, PATHINFO_FILENAME);
+            $loaded = Config::fromFile($file);
+            $this->config->set($key, array_replace_recursive(
+                (array) $this->config->get($key, []),
+                $loaded->all(),
+            ));
+        }
+        return $this;
+    }
+
     /** Return the application configuration repository. */
     public function configuration(): Config
     {
@@ -509,9 +533,37 @@ final class App
         }
     }
 
-    // -----------------------------------------------------------------
-    // Internals
-    // -----------------------------------------------------------------
+    /**
+     * Return the underlying {@see Router} instance.
+     *
+     * Useful when you need to inspect registered routes, load/write the route
+     * cache, or generate URLs outside of a request context.
+     *
+     * ```php
+     * $app->router()->writeCache(storage_path('routes.cache.php'));
+     * ```
+     */
+    public function router(): Router
+    {
+        return $this->router;
+    }
+
+    /**
+     * Emit a response to the client (send headers + body).
+     *
+     * Called automatically by {@see run()}.  Expose it publicly so that
+     * application code that builds a response manually (benchmarks, CLI entry
+     * points) can emit it without going through the full dispatch pipeline.
+     *
+     * ```php
+     * $response = $app->handle($request);
+     * $app->send($response);
+     * ```
+     */
+    public function send(Response $response): void
+    {
+        $this->emit($response);
+    }
 
     // -----------------------------------------------------------------
     // Shortcuts for commonly bound services

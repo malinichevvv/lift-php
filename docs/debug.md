@@ -1,318 +1,237 @@
 ---
 layout: page
-title: Debug Toolbar
-nav_order: 17
+title: Debug toolbar
+nav_order: 34
 ---
 
-# Debug Toolbar
+# Debug toolbar
 
-Lift includes a request-scoped debug toolbar for local development. It renders as a minimal bar at the bottom of any HTML page and expands into a full panel with tabs for request/response details, SQL queries, log entries, performance metrics, and errors.
+Lift ships an in-browser debugging toolbar — a docked panel that overlays your HTML pages with timings, request/response data, database queries, log messages, and uncaught-exception pages. **Off by default**; gated by `$app->debug(true)` so it can't accidentally ship to production.
 
----
+> Mental model: a debug session is just three pieces — a **DebugCollector** that records info during the request, a **DebugToolbarMiddleware** that injects the rendered HTML into responses, and an **ErrorHandler** that converts exceptions into rich HTML pages instead of plain 500s.
 
-## Enabling debug mode
-
-```php
-$app = new App();
-$app->debug(['enabled' => true]);
-```
-
-By convention, read the flag from the environment:
+## Enabling it
 
 ```php
-$app->debug(['enabled' => ($_ENV['APP_DEBUG'] ?? '0') === '1']);
-```
-
-Debug mode is **off by default**. Nothing is installed unless you call `debug()`.
-
----
-
-## All configuration options
-
-Pass an array to `$app->debug()`. Every key is optional; the defaults are shown below.
-
-```php
-$app->debug([
-    // Master switch — must be true for anything else to work.
-    'enabled' => false,
-
-    // Inject the HTML toolbar into HTML responses.
-    'toolbar' => true,
-
-    // Only inject into responses whose Content-Type contains text/html.
-    'only_html' => true,
-
-    // Register a set_error_handler() to capture PHP warnings / notices.
-    'track_php_errors' => true,
-
-    // Render pretty exception pages instead of plain 500 responses.
-    'exception_pages' => true,
-
-    // Mask these HTTP header names in the toolbar (shown as ***).
-    'hide' => [
-        'headers' => ['Authorization', 'Cookie', 'Set-Cookie'],
-        'params'  => ['password', 'password_confirmation', 'token', 'secret', 'api_key'],
-    ],
-]);
-```
-
-### Option reference
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `enabled` | bool | `false` | Master on/off switch. |
-| `toolbar` | bool | `true` | Render the HTML debug bar. Requires `enabled`. |
-| `only_html` | bool | `true` | Skip injection when `Content-Type` is not `text/html`. |
-| `track_php_errors` | bool | `true` | Capture PHP warnings, notices, and deprecations. Previous error handlers are called after Lift records the error. |
-| `exception_pages` | bool | `true` | Render detailed exception pages with stack traces. |
-| `hide.headers` | string[] | `['Authorization','Cookie','Set-Cookie']` | Request/response headers whose values are replaced with `***`. Case-insensitive. |
-| `hide.params` | string[] | `['password','password_confirmation','token','secret','api_key']` | Query and route parameters whose values are replaced with `***`. Case-insensitive. |
-
----
-
-## Toolbar injection rules
-
-The toolbar is injected only when **all** of the following hold:
-
-- `enabled` is `true`
-- `toolbar` is `true`
-- The response has a `</body>` tag to inject before
-- Response status is not `204` or `304`
-- The request method is not `HEAD`
-- The request does **not** carry the header `X-Debug-Toolbar: off`
-- When `only_html` is `true` — `Content-Type` header contains `text/html`
-
-JSON, API, redirect, and no-content responses are always left untouched.
-
----
-
-## Toolbar panels
-
-The toolbar mini-bar shows: **method · URI · status · duration · memory · SQL count · log count · error count**. Click to expand the full panel.
-
-### Request tab
-
-Shows method, URI, query parameters, route parameters, and request headers. Sensitive values are masked per `hide`.
-
-### Response tab
-
-Shows status code and response headers. Sensitive headers are masked.
-
-### SQL tab
-
-Lists every SQL query executed during the request, with:
-- The SQL statement
-- Bound parameter values
-- Execution time in milliseconds
-
-Slow queries are highlighted: **orange** for > 50 ms, **red** for > 200 ms.
-
-> The SQL tab is empty unless you wire a query listener at bootstrap. See [Wiring the SQL tab](#wiring-the-sql-tab) below.
-
-### Logs tab
-
-Lists all PSR-3 log entries recorded during the request, grouped by level with color coding (`debug` grey, `info` blue, `warning` yellow, `error`/`critical`/`alert`/`emergency` red).
-
-> The Logs tab is empty unless you add `DebugLogHandler` to your logger. See [Wiring the Logs tab](#wiring-the-logs-tab) below.
-
-### Performance tab
-
-Shows total request duration in milliseconds and peak PHP memory usage in MB.
-
-### Errors tab
-
-Appears when PHP errors or uncaught exceptions were recorded. Shows the error class, message, file, and line number.
-
----
-
-## Wiring the SQL tab
-
-The debug collector is completely decoupled from the database layer. Wire them with `Connection::onQuery()` at bootstrap:
-
-```php
-use Lift\Database\Connection;
-use Lift\Debug\DebugCollector;
-
-$db        = new Connection($dsn);
-$collector = $app->container()->make(DebugCollector::class);
-
-// Every query — including those from the QueryBuilder and raw methods — will
-// now be recorded with its SQL, bindings, and execution time.
-$db->onQuery([$collector, 'recordQuery']);
-```
-
-After wiring, the SQL tab will show all queries for each request.
-
-### Multiple connections
-
-You can wire any number of connections:
-
-```php
-$db->onQuery([$collector, 'recordQuery']);
-$readDb->onQuery([$collector, 'recordQuery']);
-```
-
----
-
-## Wiring the Logs tab
-
-Add `DebugLogHandler` to your logger at bootstrap:
-
-```php
-use Lift\Debug\DebugCollector;
-use Lift\Debug\DebugLogHandler;
-use Lift\Log\Logger;
-use Psr\Log\LogLevel;
-
-$collector = $app->container()->make(DebugCollector::class);
-
-$logger = new Logger([
-    new FileHandler('/var/log/app.log'),                // your production handler
-    new DebugLogHandler($collector),                    // debug toolbar handler
-]);
-```
-
-`DebugLogHandler` accepts an optional minimum log level (default `debug`):
-
-```php
-// Only capture warnings and above in the toolbar
-new DebugLogHandler($collector, LogLevel::WARNING)
-```
-
-### `DebugLogHandler` options
-
-| Constructor parameter | Type | Default | Description |
-|-----------------------|------|---------|-------------|
-| `$collector` | `DebugCollector` | required | The request-scoped collector instance. |
-| `$minLevel` | `string` (PSR-3 level) | `LogLevel::DEBUG` | Log entries below this level are ignored. |
-
----
-
-## Full bootstrap example
-
-This is what a production-ready bootstrap looks like with all debug integrations active:
-
-```php
-<?php
-require __DIR__ . '/../vendor/autoload.php';
-
-use Lift\App;
-use Lift\Database\Connection;
-use Lift\Debug\DebugCollector;
-use Lift\Debug\DebugLogHandler;
-use Lift\Log\Logger;
-use Lift\Log\Handler\FileHandler;
 use Lift\Config\Env;
 
-$app = new App();
-$app->loadEnv(__DIR__ . '/../.env');
-
-// ① Enable debug mode from environment
 $app->debug([
-    'enabled'           => Env::bool('APP_DEBUG', false),
-    'toolbar'           => true,
-    'track_php_errors'  => true,
-    'exception_pages'   => true,
+    'enabled'          => Env::bool('APP_DEBUG', false),     // master switch
+    'toolbar'          => true,                              // render the HTML toolbar
+    'position'         => 'bottom-right',                    // or 'bottom-left'
+    'only_html'        => true,                              // skip JSON/text/binary responses
+    'track_php_errors' => true,                              // capture warnings/notices
+    'exception_pages'  => true,                              // pretty HTML 500 pages
     'hide' => [
         'headers' => ['Authorization', 'Cookie', 'Set-Cookie'],
         'params'  => ['password', 'token', 'secret'],
     ],
 ]);
+```
 
-// ② Wire database → collector (only when debug is on)
-$db = new Connection($dsn);
-$app->instance(Connection::class, $db);
+Or the short form:
 
-if (Env::bool('APP_DEBUG', false)) {
-    $collector = $app->container()->make(DebugCollector::class);
-    $db->onQuery([$collector, 'recordQuery']);
-}
+```php
+$app->debug(true);                       // enable with defaults
+$app->debug(Env::bool('APP_DEBUG', false));
+```
 
-// ③ Wire logger → collector
-$logger = new Logger([
-    new FileHandler('/var/log/app.log'),
-    ...(Env::bool('APP_DEBUG', false)
-        ? [new DebugLogHandler($app->container()->make(DebugCollector::class))]
-        : []),
+**Always** derive `enabled` from an environment variable. Hard-coding `true` will leak source code paths, env vars, and stack traces the next time you deploy.
+
+## What it shows
+
+A small badge appears in the bottom corner of every HTML response. Click it to expand:
+
+- **Request** — method, path, route name, controller, route parameters, headers (with redactions).
+- **Response** — status, content type, headers, size, render time.
+- **Session** — current keys/values (when a session is active).
+- **Queries** — every SQL statement executed during the request, with bindings, duration, and the call site.
+- **Logs** — every PSR-3 log line emitted during the request.
+- **PHP errors** — captured warnings/notices that didn't escalate to exceptions.
+- **Timing** — boot, dispatch, render time breakdown.
+- **Memory** — peak / current.
+
+The "hide" list redacts sensitive headers/params so screenshots are safe to share.
+
+## How injection works
+
+`DebugToolbarMiddleware` runs at the very end of the pipeline. After your handler returns, it:
+
+1. Checks `DebugConfig::shouldInject()` (skipping HEAD, 204/304, non-HTML, `X-Debug-Toolbar: off`, …).
+2. Renders the toolbar HTML from the collected data.
+3. Injects it before the closing `</body>` tag of the response.
+
+To skip the toolbar for one specific request, send the header:
+
+```
+X-Debug-Toolbar: off
+```
+
+— useful for full-page-screenshot tooling, performance benchmarks, etc.
+
+## Exception pages
+
+When `exception_pages: true` and an uncaught `Throwable` reaches `ErrorHandler::handle()`, Lift renders a detailed HTML page with:
+
+- Exception class + message + status code.
+- File / line of the throw, with **source-code preview** (~10 lines).
+- Full stack trace, each frame expandable to its own source preview.
+- Request inspection panel (same data as the toolbar).
+- "Open in editor" links (`vscode://`, `phpstorm://`) on every frame.
+
+Disable per-environment:
+
+```php
+'exception_pages' => $app->environment() === 'local',
+```
+
+For JSON APIs you usually want both `toolbar: false` and `exception_pages: false` — error responses should stay JSON. The middleware honours these flags independently.
+
+## SQL query log
+
+`$db->onQuery(...)` is what powers the query panel. Lift wires it automatically when debug is enabled and a `Connection` is registered. To attach manually for advanced setups:
+
+```php
+$collector = $app->container()->get(\Lift\Debug\DebugCollector::class);
+$db->onQuery(fn($sql, $bindings, $ms) => $collector->addQuery($sql, $bindings, $ms));
+```
+
+Each row shows:
+
+- SQL with `?` placeholders.
+- The actual `$bindings` array.
+- Execution time in ms.
+
+## Log capture
+
+`DebugLogHandler` is a tiny PSR-3 handler that forwards every log line into the collector. To enable:
+
+```php
+$logger = new \Lift\Log\Logger([
+    new \Lift\Log\Handler\FileHandler('storage/logs/app.log'),
+    new \Lift\Debug\DebugLogHandler($collector),       // only when debug is on
 ]);
-$app->instance(Logger::class, $logger);
 ```
 
----
-
-## Disabling the toolbar per-request
-
-Send `X-Debug-Toolbar: off` in the request to suppress toolbar injection for that request only. Useful for AJAX calls inside an HTML page:
-
-```js
-fetch('/api/data', { headers: { 'X-Debug-Toolbar': 'off' } })
-```
-
----
-
-## Custom exception renderers
-
-Register handlers by exception class or base type. They take priority over the default exception pages:
+In a typical bootstrap:
 
 ```php
-use Lift\Exception\NotFoundException;
+$app->singleton(\Psr\Log\LoggerInterface::class, function () use ($app) {
+    $handlers = [new FileHandler('storage/logs/app.log', 'info')];
 
-$app->debug(['enabled' => true]);
+    if ($app->container()->has(\Lift\Debug\DebugCollector::class)) {
+        $handlers[] = new \Lift\Debug\DebugLogHandler(
+            $app->container()->get(\Lift\Debug\DebugCollector::class),
+        );
+    }
 
-$app->onException(NotFoundException::class, function (NotFoundException $e, Request $request) {
-    return Response::html('<h1>Page not found</h1>', 404);
+    return new Logger($handlers);
 });
 ```
 
-You can also use the error handler directly:
+## Custom collector entries
+
+Anything in your code can record into the collector:
 
 ```php
-$app->debugErrorHandler()->render(
-    \DomainException::class,
-    fn (\DomainException $e) => Response::json(['error' => $e->getMessage()], 409)
-);
+$collector = $app->container()->get(\Lift\Debug\DebugCollector::class);
+$collector->addTiming('ai.completion', 1234.5);
+$collector->addContext('feature_flags', $flags);
 ```
 
-### Fallback handler
+These show up in the toolbar under a generic "App" panel.
 
-The `onError()` API becomes the catch-all after exception-specific renderers:
+## Production safety
+
+A deployment-day checklist:
+
+- ✅ `APP_DEBUG=false` in your prod `.env`.
+- ✅ `$app->debug(Env::bool('APP_DEBUG', false))` — **never** `$app->debug(true)`.
+- ✅ Sensitive headers/params are in the `hide` list (`Authorization`, `Cookie`, `password`, `token`, `secret` — Lift's defaults already cover these).
+- ✅ `OPcache.save_comments = 1` is fine; the toolbar doesn't need it specifically (route attributes do).
+- ❌ Don't `$_GET['debug'] = true` your way to enabling it — it leaks to logged-in users.
+
+When debug is **disabled**:
+
+- `DebugCollector` isn't built.
+- The middleware short-circuits (no injection).
+- Error pages fall through to your `$app->onError(...)` handler (or Lift's default 500 JSON).
+
+Result: zero overhead in production.
+
+## Performance
+
+Enabled, the toolbar adds ~1–3 ms of overhead per request (collection + HTML render). Disabled, it adds **zero** — the middleware isn't even registered, the collector isn't constructed. Don't ship-gate on perf concerns; ship-gate on security.
+
+## Configuration reference
 
 ```php
-$app->onError(function (Throwable $e, Request $request) {
-    return Response::json(['error' => 'Something went wrong'], 500);
-});
+$app->debug([
+    'enabled'           => false,     // master switch
+    'toolbar'           => true,      // inject the HTML toolbar
+    'position'          => 'bottom-right',  // or 'bottom-left'
+    'only_html'         => true,      // skip non-HTML responses
+    'track_php_errors'  => true,      // capture warnings / notices
+    'exception_pages'   => true,      // render rich HTML for uncaught exceptions
+    'hide' => [
+        'headers' => ['Authorization', 'Cookie', 'Set-Cookie'],
+        'params'  => ['password', 'password_confirmation', 'token', 'secret'],
+    ],
+]);
 ```
 
-Built-in fallbacks when no handler is registered:
+| Key                | Default                                        | Effect                                           |
+|--------------------|------------------------------------------------|--------------------------------------------------|
+| `enabled`          | `false`                                        | Master switch. Nothing else runs without it.     |
+| `toolbar`          | `true`                                         | Inject the HTML panel.                           |
+| `position`         | `'bottom-right'`                               | `'bottom-right'` or `'bottom-left'`.             |
+| `only_html`        | `true`                                         | Skip JSON/binary responses.                      |
+| `track_php_errors` | `true`                                         | Capture `E_NOTICE` / `E_WARNING`.                |
+| `exception_pages`  | `true`                                         | Pretty 500 page on uncaught exceptions.          |
+| `hide.headers`     | `['Authorization', 'Cookie', 'Set-Cookie']`    | Mask these request/response headers.             |
+| `hide.params`      | `['password', 'token', 'secret', …]`           | Mask these query / body / route parameters.      |
 
-| Exception | Default response |
-|-----------|-----------------|
-| `ValidationException` | `422` JSON with validation errors |
-| `HttpException` | JSON with the exception's status code |
-| Everything else (debug on) | HTML exception page |
-| Everything else (debug off) | `500` JSON |
+## Tips
 
----
+- **Behind a CDN?** Bypass the cache on debug requests (`Cache-Control: private, no-store`) — otherwise the cached page won't include your toolbar.
+- **JSON API in dev?** Set `only_html: false` and the toolbar tries to inject anyway. Most teams keep `only_html: true` and just use the exception-pages feature for API debugging.
+- **Slow page render?** Open the toolbar's **Timing** panel — it'll usually narrow it down to a specific middleware / handler / query.
 
-## PHP error tracking
+## Common pitfalls
 
-When `track_php_errors` is `true` Lift installs a `set_error_handler()` that captures warnings, notices, and deprecations into the collector. Any previously registered PHP error handler is still called after Lift records the error.
+| Symptom | Cause | Fix |
+|---|---|---|
+| Toolbar doesn't appear on any page | `enabled: false` (often via env) | Set `APP_DEBUG=true` in `.env`. |
+| Toolbar doesn't appear on JSON endpoints | `only_html: true` (correct behaviour) | Either flip to false (rarely useful) or use exception pages instead. |
+| `X-Debug-Toolbar: off` from a screenshot tool blocks debugging mid-test | Header sent unintentionally | Drop the header in test setup. |
+| Sensitive header / param still visible | Not in `hide.headers`/`hide.params` list | Add it explicitly. |
+| Toolbar shows zero SQL queries | DB connection wasn't built via the container (or `onQuery` wiring skipped) | Make sure the same `Connection` instance both serves your handlers and is registered with the collector. |
+| Exception page leaks `.env` values | `exception_pages: true` in production | Tie it to environment, **never** hardcode `true`. |
 
-Restore the previous handler manually if needed (e.g. in tests):
+## Cheat sheet
 
 ```php
-$app->debugErrorHandler()->restorePhpHandlers();
+// Enable (always env-gated!)
+$app->debug([
+    'enabled'         => Env::bool('APP_DEBUG', false),
+    'toolbar'         => true,
+    'exception_pages' => true,
+]);
+
+// Off per-request
+// curl -H 'X-Debug-Toolbar: off' …
+
+// Custom timing
+$collector->addTiming('llm.call', $ms);
+
+// Custom context panel
+$collector->addContext('features', $flagsArray);
+
+// Logger that feeds the toolbar
+new Logger([
+    new FileHandler('storage/logs/app.log'),
+    new DebugLogHandler($collector),
+]);
 ```
 
----
-
-## Security notes
-
-- **Never enable debug mode in production.** Exception pages expose stack traces, environment values, and SQL queries.
-- **Always mask secrets** — add passwords, tokens, API keys, and cookies to `hide.headers` / `hide.params`.
-- **Prefer environment-based enabling** so debug mode is only active on developer machines.
-
-```dotenv
-# .env (local only)
-APP_DEBUG=true
-```
+[Async (Fibers) →](async)

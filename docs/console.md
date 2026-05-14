@@ -1,368 +1,296 @@
 ---
 layout: page
 title: Console (CLI)
-nav_order: 16
+nav_order: 30
 ---
 
 # Console (CLI)
 
-Lift ships a console application with built-in commands for serving, migrating, generating code, and running queue workers. You can also write your own commands and register them with the application.
+Lift ships a tiny PSR-friendly CLI framework — `Lift\Console\Application` — and the `vendor/bin/lift` binary, which comes with generators (`make:controller`, `make:model`, …), database tools (`migrate`, `migrate:rollback`), and the queue worker.
 
----
+> Mental model: a CLI app is just a collection of `Command` objects keyed by name. `Application` parses argv, finds the matching command, calls its `execute(Input, Output): int` method.
 
-## Running commands
+## Using `vendor/bin/lift`
 
-### Via `vendor/bin/lift`
-
-```bash
-php vendor/bin/lift <command> [arguments] [--options]
-```
-
-### Via Composer scripts (shorter)
-
-After installation the `lift` script is registered in `composer.json`:
+After `composer require lift-php/lift`, the binary is on PATH for any project:
 
 ```bash
-composer lift serve
-composer lift migrate
-composer lift make:controller UserController
+vendor/bin/lift                          # list all commands
+vendor/bin/lift list                     # same thing
+vendor/bin/lift help <command>           # help for one command
+vendor/bin/lift version                  # show framework version
 ```
 
-### Built-in PHP server shortcut
+Set up a shell alias if you'll be typing it a lot:
 
 ```bash
-composer lift serve           # http://localhost:8000
-composer lift serve -- --host=0.0.0.0 --port=9000
+alias lift='vendor/bin/lift'
+lift list
 ```
-
----
 
 ## Built-in commands
 
-### `serve`
+| Group       | Command                          | Purpose                                                |
+|-------------|----------------------------------|--------------------------------------------------------|
+| **make**    | `make:controller <Name>`         | Generate a controller class                            |
+|             | `make:request    <Name>`         | Generate a `FormRequest` subclass                      |
+|             | `make:resource   <Name>`         | Generate a `JsonResource` subclass                     |
+|             | `make:model      <Name>`         | Generate an active-record model                        |
+|             | `make:middleware <Name>`         | Generate a PSR-15 middleware                           |
+|             | `make:command    <Name>`         | Generate a `Command` subclass                          |
+|             | `make:job        <Name>`         | Generate a queue job                                   |
+|             | `make:event      <Name>`         | Generate an event class                                |
+|             | `make:test       <Name>`         | Generate a `TestCase` subclass                         |
+|             | `make:migration  <name>`         | Generate a timestamped migration file                  |
+| **migrate** | `migrate`                        | Run all pending migrations                             |
+|             | `migrate:rollback [--steps=N]`   | Roll back the last N batches (default 1)               |
+|             | `migrate:reset`                  | Roll back every migration                              |
+|             | `migrate:fresh`                  | `reset` + `migrate`                                    |
+|             | `migrate:status`                 | Tabular state of every migration                       |
+| **queue**   | `queue:work [--queue=...] [--sleep=N] [--max-jobs=N]` | Start a queue worker (see [Queues](queues#running-a-worker)) |
+|             | `queue:table`                    | Print SQL/migration to create the database-queue table |
+| **routes**  | `routes`                         | List every registered route in a table                 |
+| **app**     | `serve [--port=8000]`            | Boot `php -S` on `public/`                             |
+|             | `key:generate`                   | Print a random `APP_KEY` (base64-encoded 32 bytes)     |
+|             | `repl`                           | Start an interactive PHP REPL with app context         |
 
-Start the built-in PHP development server.
-
-```bash
-php vendor/bin/lift serve
-php vendor/bin/lift serve --host=0.0.0.0 --port=9000
-php vendor/bin/lift serve --root=public/
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--host` | `127.0.0.1` | Hostname to listen on. |
-| `--port` | `8000` | Port number. |
-| `--root` | `public/` | Document root directory. |
-
----
-
-### `migrate`
-
-Run all pending database migrations.
-
-```bash
-php vendor/bin/lift migrate
-php vendor/bin/lift migrate --path=database/migrations
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--path` | `database/migrations` | Directory containing migration files. |
-
----
-
-### `migrate:rollback`
-
-Roll back the most recently run migration batch.
+Most generators accept these flags:
 
 ```bash
-php vendor/bin/lift migrate:rollback
-php vendor/bin/lift migrate:rollback --steps=3
+lift make:controller AdminController --namespace=App\\Admin --path=src/Admin
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--steps` | `1` | Number of batches to roll back. |
-| `--path` | `database/migrations` | Migrations directory. |
+| Flag             | Default        | Purpose                                  |
+|------------------|----------------|------------------------------------------|
+| `--namespace=…`  | `App`          | PHP namespace of the generated class     |
+| `--path=…`       | `src`          | Directory written to (relative to CWD)   |
+| `--force`        | off            | Overwrite existing files                 |
 
----
+Generated files are intentionally minimal — they're starting points, edit freely.
 
-### `migrate:reset`
-
-Roll back **all** migration batches (undo every migration).
+## `make:test` — generate test classes
 
 ```bash
-php vendor/bin/lift migrate:reset
+lift make:test UserTest
+# → src/Tests/UserTest.php
+
+lift make:test Feature/OrderFlowTest --namespace=Tests\\Feature
+# → src/Tests/Feature/OrderFlowTest.php
 ```
 
----
-
-### `migrate:fresh`
-
-Drop all tables by resetting all migrations, then run all migrations from scratch. Useful for development.
-
-```bash
-php vendor/bin/lift migrate:fresh
-```
-
----
-
-### `migrate:status`
-
-Show the status of every migration file.
-
-```bash
-php vendor/bin/lift migrate:status
-```
-
-Example output:
-
-```
-Batch | Ran | Migration
-------+-----+----------------------------------------------
-1     | ✓   | 2024_01_10_000000_create_users_table
-1     | ✓   | 2024_01_11_000000_create_posts_table
-      | ✗   | 2024_06_01_000000_add_avatar_to_users_table
-```
-
----
-
-### `make:migration`
-
-Create a new timestamped migration file. The stub content is inferred from the name:
-
-| Name pattern | Generated stub |
-|-------------|----------------|
-| `create_{table}_table` | `Schema::create()` with `id()`, `timestamps()` |
-| `add_{columns}_to_{table}` | `Schema::alter()` for adding columns |
-| anything else | blank `up()` / `down()` methods |
-
-```bash
-php vendor/bin/lift make:migration create_products_table
-php vendor/bin/lift make:migration add_avatar_to_users
-php vendor/bin/lift make:migration drop_temp_table
-php vendor/bin/lift make:migration create_orders_table --path=src/Migrations
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--path` | `database/migrations` | Directory to write the migration file. |
-
----
-
-### `key:generate`
-
-Generate a new `APP_KEY` and write it to `.env`. The key is a base64-encoded random 32-byte value. If `APP_KEY` already exists in the file, it is replaced in place; otherwise, it is appended.
-
-```bash
-php vendor/bin/lift key:generate
-php vendor/bin/lift key:generate --env=.env.local
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--env` | `.env` (in `cwd`) | Path to the env file to write. |
-
-Example output:
-
-```
-Application key set: base64:XvM0P9...
-Written to /home/user/myapp/.env
-```
-
----
-
-### `list-routes`
-
-Display all registered routes with their method, path, name, and handler.
-
-```bash
-php vendor/bin/lift list-routes
-```
-
----
-
-### `make:controller`
-
-Generate a controller class skeleton.
-
-```bash
-php vendor/bin/lift make:controller UserController
-php vendor/bin/lift make:controller Api/PostController --namespace=App\\Http\\Controllers --path=src
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--namespace` | `App\Http\Controllers` | PHP namespace for the generated class. |
-| `--path` | `src` | Base directory (namespace is mapped to a subdirectory). |
-
----
-
-### `make:model`
-
-```bash
-php vendor/bin/lift make:model Post
-php vendor/bin/lift make:model Post --namespace=App\\Models
-```
-
----
-
-### `make:request`
-
-```bash
-php vendor/bin/lift make:request StorePostRequest
-```
-
----
-
-### `make:resource`
-
-```bash
-php vendor/bin/lift make:resource PostResource
-```
-
----
-
-### `make:middleware`
-
-```bash
-php vendor/bin/lift make:middleware AuthMiddleware
-```
-
----
-
-### `make:command`
-
-Generate a console command skeleton.
-
-```bash
-php vendor/bin/lift make:command SendDailyReport
-```
-
-Generated stub:
+The generated stub extends `Lift\Testing\TestCase`:
 
 ```php
-final class SendDailyReport extends Command
+final class UserTest extends TestCase
 {
-    public function getName(): string        { return 'send:daily-report'; }
-    public function getDescription(): string { return ''; }
-
-    public function execute(Input $input, Output $output): int
+    public function testExample(): void
     {
-        $output->writeln('Running SendDailyReport...');
-        return 0;
+        $this->assertTrue(true);
     }
 }
 ```
 
----
+`TestCase` ships HTTP helpers (`$this->get(...)`, `$this->post(...)`, `$this->assertStatus(200)`) — see [Testing](testing) for the full API.
 
-### `make:job`
+## `repl` — interactive PHP REPL
 
-Generate a queue job skeleton.
+`lift repl` drops you into a live PHP interpreter with your app already loaded:
 
-```bash
-php vendor/bin/lift make:job SendWelcomeEmail
+```
+$ lift repl
+Lift REPL — type PHP and press Enter. Type exit or Ctrl+D to quit.
+$app is available.
+
+>>> $app->configuration()->get('app.name')
+"My App"
+
+>>> $app->db()->table('users')->count()
+42
+
+>>> $u = new App\Models\User(); $u->name = 'Alice'
+>>> $u
+App\Models\User {"name":"Alice"}
+
+>>> exit
+Bye!
 ```
 
----
+**How it works**
 
-### `make:event`
+1. Lift looks for `bootstrap/app.php` (then `app.php`) in the current directory. If found, it requires the file and makes the returned value available as `$app`.
+2. Each line is attempted as an expression first (`return (…);`). If it parses, the return value is printed using compact var_export-style output. If it doesn't parse (assignment, control flow, etc.), the line is executed as a statement.
+3. Variables persist across iterations — set `$x = 5` on one line, use `$x` on the next.
+4. Multi-line input: end a line with `\` to continue on the next line.
 
-Generate an event class skeleton.
-
-```bash
-php vendor/bin/lift make:event UserRegistered
+```
+>>> $users = $app->db()
+...   ->table('users')
+...   ->where('active', true)
+...   ->get() \
+... ->pluck('email')
+["alice@example.com","bob@example.com"]
 ```
 
----
+**Flags**
 
-### `make:test`
+| Flag | Purpose |
+|---|---|
+| `--bootstrap=path` | Explicit bootstrap file (overrides auto-detection) |
 
-Generate a PHPUnit test skeleton.
+**History** is saved to `~/.lift_repl_history` and loaded on next launch, so you can arrow-up through previous sessions.
 
-```bash
-php vendor/bin/lift make:test UserTest
-php vendor/bin/lift make:test Feature/UserRegistrationTest --namespace=App\\Tests\\Feature
-```
+**Requirements**: The `readline` PHP extension must be installed (`php-readline` on most Linux distros). The REPL will tell you if it's missing.
 
----
+## Adding your own commands
 
-### `worker`
-
-Start the queue worker. The worker polls the queue, processes jobs with retry logic, and handles graceful shutdown signals (requires `ext-pcntl`).
-
-```bash
-php vendor/bin/lift worker
-php vendor/bin/lift worker --queue=emails --sleep=2 --max-jobs=500
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--queue` | `default` | Queue name to consume. |
-| `--sleep` | `1` | Seconds to sleep between polls when queue is empty. |
-| `--max-jobs` | `0` | Stop after processing N jobs (0 = run forever). |
-
----
-
-## Writing custom commands
-
-Extend `Command` and implement three methods:
+`Lift\Console\Application` accepts any subclass of `Lift\Console\Command`. Drop a file in `bin/`:
 
 ```php
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+
+require __DIR__ . '/../vendor/autoload.php';
+
+use Lift\Console\Application;
 use Lift\Console\Command;
 use Lift\Console\Input;
 use Lift\Console\Output;
 
-final class ClearCacheCommand extends Command
+final class CleanCacheCommand extends Command
 {
-    public function getName(): string
-    {
-        return 'cache:clear';
-    }
-
-    public function getDescription(): string
-    {
-        return 'Clear the application cache';
-    }
+    public function getName(): string        { return 'cache:clear'; }
+    public function getDescription(): string { return 'Wipe the application cache'; }
 
     public function execute(Input $input, Output $output): int
     {
-        $prefix = $input->option('prefix', 'lift_');
-        // ... clear cache ...
-        $output->writeln("<info>Cache cleared (prefix: {$prefix})</info>");
-        return 0; // 0 = success; non-zero = failure
+        $output->write('Clearing cache… ');
+        // …actual work…
+        $output->success('done');
+        return 0;
     }
 }
+
+$app = require __DIR__ . '/../app/bootstrap.php';   // your Lift app
+
+$cli = new Application('myapp', '1.0.0');
+$cli->register($app->make(CleanCacheCommand::class));     // DI-resolved
+exit($cli->run());
 ```
 
-### Input helpers
+Make it executable: `chmod +x bin/myapp`. Run it: `./bin/myapp cache:clear`.
+
+### Convention: namespace your commands
+
+Use `:` in the command name to group commands in `list`. `lift list` will print them under headings:
+
+```
+ cache
+  cache:clear                    Wipe the application cache
+  cache:warmup                   Pre-build the page cache
+
+ db
+  db:seed                        Run the seeders
+```
+
+## The `Command` base class
 
 ```php
-$input->argument('name');           // positional argument (first after command name)
-$input->argument('name', 'Alice');  // with default
-$input->option('path');             // --path=value or --path value
-$input->option('verbose', false);   // with default
-$input->hasOption('verbose');       // bool
+abstract class Command
+{
+    abstract public function getName(): string;            // e.g. 'cache:clear'
+    abstract public function getDescription(): string;     // one-line summary
+    abstract public function execute(Input $i, Output $o): int;   // exit code
+
+    public function getHelp(): string { return $this->getDescription(); }  // optional long help
+}
 ```
 
-### Output helpers
+Return `0` from `execute()` on success, non-zero on failure. The exit code is what `Application::run()` returns — perfect for shell scripts:
+
+```bash
+lift migrate || { echo 'migration failed'; exit 1; }
+```
+
+## `Input` — reading argv
 
 ```php
-$output->writeln('Hello');
-$output->writeln('<info>Success</info>');     // green
-$output->writeln('<comment>Note</comment>');  // yellow
-$output->writeln('<error>Failed</error>');    // red
-$output->table(['Column A', 'Column B'], [
-    ['row1a', 'row1b'],
-    ['row2a', 'row2b'],
-]);
+$input->getCommand();                    // 'migrate'
+$input->getArgument(0, 'default');       // first positional argument
+$input->getArguments();                  // all positional args (excluding command)
+$input->getOption('queue', 'default');   // --queue=foo or 'default'
+$input->hasOption('force');              // --force was passed?
 ```
 
-### Registering commands
+Argv parsing rules:
 
-Register commands when building the console application (e.g. in `bin/lift`):
+- `--name=value` → option `name` with string value.
+- `--name` → option `name` with `true` value.
+- `-X` (single char) → option `X` with `true`.
+- Anything else, in order, becomes the command and then positional arguments.
+
+There are intentionally **no required-argument declarations** — read the args you need, fall back to defaults, fail with a useful message:
+
+```php
+public function execute(Input $i, Output $o): int
+{
+    $name = $i->getArgument(0);
+    if ($name === '') {
+        $o->error('Usage: lift make:foo <name>');
+        return 1;
+    }
+    // …
+}
+```
+
+## `Output` — writing to stdout/stderr with colour
+
+Markup-style tags inside strings — `<green>`, `<yellow>`, `<red>`, `<cyan>`, `<bold>`, `<grey>` — are converted to ANSI escapes only when stdout is a TTY. In a pipe (`lift foo | grep …`) or in tests, the tags are stripped.
+
+```php
+$o->writeln('Hello');
+$o->writeln('<green>Success</green> in <bold>0.4s</bold>');
+$o->write('Working… ');           // no newline
+$o->writeln('done');
+
+$o->success('All clear.');         // green
+$o->warn('Slow query detected');   // yellow
+$o->error('Boom');                 // red, → stderr
+$o->info('Heads up');              // cyan
+```
+
+### Tables
+
+```php
+$o->table(
+    headers: ['ID', 'Email', 'Active'],
+    rows:    [
+        [1, 'alice@example.com', 'yes'],
+        [2, 'bob@example.com',   'no'],
+    ],
+);
+```
+
+Auto-sizes columns to the widest cell. Use it for `migrate:status`-style output.
+
+## Standalone CLI (without Lift app)
+
+`Lift\Console\Application` doesn't depend on `Lift\App`. You can use it on its own:
+
+```php
+use Lift\Console\Application;
+
+$cli = new Application('mytool', '0.1.0');
+$cli->register(new GenerateReadmeCommand());
+$cli->register(new CheckLinksCommand());
+exit($cli->run());
+```
+
+Great for project-specific tooling without the HTTP stack.
+
+## Real-world example — daily cron job
+
+`bin/daily.php`:
 
 ```php
 #!/usr/bin/env php
@@ -370,65 +298,107 @@ Register commands when building the console application (e.g. in `bin/lift`):
 require __DIR__ . '/../vendor/autoload.php';
 
 use Lift\Console\Application;
-use Lift\Database\Connection;
-use App\Console\Commands\ClearCacheCommand;
+use Lift\Console\Command;
+use Lift\Console\Input;
+use Lift\Console\Output;
 
-$db  = new Connection(getenv('DB_DSN'));
-$app = new Application('Lift', '1.0.0');
+$app = require __DIR__ . '/../app/bootstrap.php';
 
-$app->register(new ClearCacheCommand());
-// built-in commands
-$app->register(new \Lift\Console\Commands\ServeCommand());
-$app->register(new \Lift\Console\Commands\MigrateCommand($db));
+final class PurgeOldSessions extends Command
+{
+    public function __construct(private readonly \Lift\Database\Connection $db) {}
 
-exit($app->run());
-```
+    public function getName(): string        { return 'purge:sessions'; }
+    public function getDescription(): string { return 'Delete sessions older than 30 days'; }
 
----
+    public function execute(Input $i, Output $o): int
+    {
+        $days = (int) $i->getOption('days', 30);
+        $cut  = time() - 86400 * $days;
 
-## Bootstrap file (`bin/lift`)
-
-Lift's own `bin/lift` entry point registers all built-in commands. Copy and adapt it as `bin/console` or `bin/artisan` for your project:
-
-```php
-#!/usr/bin/env php
-<?php
-require __DIR__ . '/../vendor/autoload.php';
-
-use Lift\Console\Application;
-use Lift\Console\Commands\{
-    ServeCommand, ListRoutesCommand, WorkerCommand, KeyGenerateCommand,
-    MakeCommand, MakeMigrationCommand,
-    MigrateCommand, MigrateRollbackCommand, MigrateResetCommand,
-    MigrateFreshCommand, MigrateStatusCommand,
-};
-
-// Optionally bootstrap your database
-$db = isset($_ENV['DB_DSN']) ? new \Lift\Database\Connection($_ENV['DB_DSN']) : null;
-
-$app = new Application('My App CLI', '1.0.0');
-
-$app->register(new ServeCommand());
-$app->register(new ListRoutesCommand($router ?? null));
-$app->register(new KeyGenerateCommand());
-$app->register(new MakeCommand('controller'));
-$app->register(new MakeCommand('model'));
-$app->register(new MakeCommand('middleware'));
-$app->register(new MakeCommand('command'));
-$app->register(new MakeCommand('job'));
-$app->register(new MakeCommand('event'));
-$app->register(new MakeCommand('test'));
-$app->register(new MakeCommand('request'));
-$app->register(new MakeCommand('resource'));
-
-if ($db) {
-    $app->register(new MakeMigrationCommand());
-    $app->register(new MigrateCommand($db));
-    $app->register(new MigrateRollbackCommand($db));
-    $app->register(new MigrateResetCommand($db));
-    $app->register(new MigrateFreshCommand($db));
-    $app->register(new MigrateStatusCommand($db));
+        $n = $this->db->execute('DELETE FROM sessions WHERE last_activity < ?', [$cut]);
+        $o->success("Purged {$n} stale session(s).");
+        return 0;
+    }
 }
 
-exit($app->run());
+$cli = new Application('daily', '1.0.0');
+$cli->register($app->make(PurgeOldSessions::class));
+exit($cli->run());
 ```
+
+Crontab:
+
+```
+0 3 * * *  cd /var/www/myapp && php bin/daily.php purge:sessions --days=30
+```
+
+## Testing commands
+
+`Output` accepts custom stream resources, so tests can capture stdout/stderr without forking a process:
+
+```php
+public function testItPrintsHello(): void
+{
+    $out = fopen('php://memory', 'r+');
+    $err = fopen('php://memory', 'r+');
+
+    $cmd    = new MyCommand();
+    $exit   = $cmd->execute(new Input(['arg']), new Output($out, $err));
+
+    rewind($out);
+    self::assertSame(0, $exit);
+    self::assertStringContainsString('Hello', stream_get_contents($out));
+}
+```
+
+Color tags are auto-stripped when `Output` doesn't think it's on a TTY — your assertions stay free of ANSI escapes.
+
+## Common pitfalls
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Command 'foo' not found` | Forgot to `register()` it | Add it to your CLI bootstrap. |
+| Colours show as `<green>...` literally | Output detects no TTY (piped, redirected) | Expected — colours show only on real terminals. |
+| Long command output isn't flushed | `fwrite()` to stdout is line-buffered | `fflush(STDOUT)` after writing — or use `Output::writeln()` which writes whole lines. |
+| `Cannot resolve parameter $db` when registering | The CLI bootstrap forgot to wire DI | Build commands through the container: `$cli->register($app->make(MyCmd::class))`. |
+| `lift queue:work` exits with code 0 immediately | No queue driver configured ⇒ `SyncQueue::pop()` always returns `null` and `sleep` ticks forever — but it does keep going. Symptom is "nothing happens" | Configure a real driver (Redis, DB). |
+| `pcntl_signal not available` in worker | Compiled PHP lacks pcntl | Install `php-pcntl`; ungraceful shutdown still works. |
+
+## Cheat sheet
+
+```php
+// Make a command
+final class MyCmd extends Command
+{
+    public function getName(): string        { return 'my:cmd'; }
+    public function getDescription(): string { return 'Does X'; }
+    public function execute(Input $i, Output $o): int { /* … */ return 0; }
+}
+
+// Read input
+$i->getCommand() / getArgument(0) / getArguments() / getOption('name') / hasOption('force');
+
+// Write output
+$o->writeln('plain');
+$o->success('green'); $o->warn('yellow'); $o->error('red, → stderr'); $o->info('cyan');
+$o->table(['a','b'], [[1,2]]);
+
+// Boot a CLI
+$cli = new Application('myapp', '1.0.0');
+$cli->register($cmd);
+exit($cli->run());
+
+// Built-in commands
+vendor/bin/lift list / version / help <cmd>
+vendor/bin/lift make:controller|request|resource|model|middleware|command|job|event|test <Name>
+vendor/bin/lift make:migration <name>
+vendor/bin/lift migrate / migrate:rollback / migrate:fresh / migrate:status
+vendor/bin/lift queue:work
+vendor/bin/lift routes
+vendor/bin/lift key:generate
+vendor/bin/lift serve --port=8000
+vendor/bin/lift repl [--bootstrap=path/to/app.php]
+```
+
+[Localization →](localization)

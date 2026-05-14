@@ -1,3 +1,9 @@
+---
+layout: page
+title: Configuration
+nav_order: 36
+---
+
 # Configuration Reference
 
 Lift is configured through environment variables (loaded from `.env`) and/or an
@@ -56,6 +62,71 @@ $app->debug(['enabled' => Env::bool('APP_DEBUG', false)]);
 $app->loadEnv(__DIR__ . '/../.env');
 echo $app->environment(); // → 'local'
 ```
+
+### Bulk-loading a config directory
+
+`$app->configure(string $directory)` reads every PHP and YAML file in a folder and registers each one under a key equal to its filename (without the extension). This mirrors the classic Laravel convention:
+
+```
+config/
+  app.php       → configuration()->get('app.name')
+  database.php  → configuration()->get('database.host')
+  cache.php     → configuration()->get('cache.driver')
+```
+
+```php
+// bootstrap/app.php
+$app = new App();
+$app->loadEnv(__DIR__ . '/../.env');
+$app->configure(__DIR__ . '/../config');   // load every file in config/
+```
+
+`config/database.php` example:
+
+```php
+<?php
+use Lift\Config\Env;
+
+return [
+    'driver'   => Env::string('DB_CONNECTION', 'sqlite'),
+    'host'     => Env::string('DB_HOST', '127.0.0.1'),
+    'port'     => Env::int('DB_PORT', 3306),
+    'database' => Env::string('DB_DATABASE', 'storage/db.sqlite'),
+    'username' => Env::string('DB_USERNAME', ''),
+    'password' => Env::string('DB_PASSWORD', ''),
+];
+```
+
+Reading the value anywhere:
+
+```php
+$driver = $app->configuration()->get('database.driver', 'sqlite');
+```
+
+`configure()` performs a recursive merge, so calling it multiple times (e.g. loading a base config then overlaying env-specific overrides) is safe:
+
+```php
+$app->configure(__DIR__ . '/../config');
+$app->configure(__DIR__ . "/../config/{$app->environment()}");  // overlays local/ or testing/
+```
+
+### App shortcut methods
+
+`App` exposes convenience accessors for the most commonly injected services:
+
+```php
+$app->router();           // Lift\Routing\Router      — route cache, URL generation
+$app->db();               // Lift\Database\Connection  — requires prior singleton binding
+$app->logger();           // Lift\Log\Logger           — requires prior singleton binding
+$app->events();           // Lift\Events\EventDispatcher — requires prior singleton binding
+$app->configuration();    // Lift\Config\Config        — live config repo (all loaded values)
+
+// Emit a response manually (useful in CLI harnesses, benchmarks)
+$response = $app->handle($request);
+$app->send($response);
+```
+
+`db()`, `logger()`, and `events()` delegate to `$app->container()->make(ClassName::class)`. They throw a `ContainerException` if you call them before binding the service.
 
 ---
 

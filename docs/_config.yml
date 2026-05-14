@@ -5,46 +5,93 @@ url: https://lift-php.github.io
 baseurl: /lift
 
 nav:
-  - title: Home
-    url: /
+  # ── Getting started ────────────────────────────────────────────────
   - title: Installation
     url: /installation
   - title: Quick Start
     url: /quickstart
+
+  # ── Core HTTP ──────────────────────────────────────────────────────
   - title: Routing
     url: /routing
+  - title: Attribute Routing
+    url: /attribute-routing
   - title: DI Container
     url: /container
   - title: Middleware
     url: /middleware
-  - title: Security Middleware
-    url: /security
   - title: Request
     url: /request
-  - title: Validation
-    url: /validation
-  - title: Localization
-    url: /localization
   - title: Response
     url: /response
+  - title: Errors & Exceptions
+    url: /errors
+
+  # ── Views & UI ─────────────────────────────────────────────────────
+  - title: Views
+    url: /views
+  - title: Sessions
+    url: /sessions
+  - title: Form Requests
+    url: /form-requests
+  - title: JSON Resources
+    url: /json-resources
+  - title: Server-Sent Events
+    url: /sse
+  - title: HTTP Client
+    url: /http-client
+
+  # ── Data layer ─────────────────────────────────────────────────────
   - title: Database
     url: /database
+  - title: Validation
+    url: /validation
+  - title: Cache
+    url: /cache
+  - title: Filesystem
+    url: /filesystem
+  - title: Redis
+    url: /redis
   - title: Collections
     url: /collections
+
+  # ── Security ───────────────────────────────────────────────────────
+  - title: Security Middleware
+    url: /security
   - title: JWT
     url: /jwt
   - title: Cryptography
     url: /crypto
-  - title: UUID & ULID
-    url: /uuid
+
+  # ── Services & background work ─────────────────────────────────────
   - title: Queues
     url: /queues
+  - title: Events
+    url: /events
+  - title: Logging
+    url: /logging
   - title: Console (CLI)
     url: /console
-  - title: Debug Toolbar
-    url: /debug
+  - title: Localization
+    url: /localization
   - title: JSON-RPC 2.0
     url: /json-rpc
+  - title: OpenAPI
+    url: /openapi
+  - title: Async (Fibers)
+    url: /async
+
+  # ── Developer experience ───────────────────────────────────────────
+  - title: Debug Toolbar
+    url: /debug
+  - title: Testing
+    url: /testing
+
+  # ── Reference ──────────────────────────────────────────────────────
+  - title: Configuration
+    url: /configuration
+  - title: UUID & ULID
+    url: /uuid
   - title: Framework Comparison
     url: /comparison
 

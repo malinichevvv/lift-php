@@ -75,9 +75,12 @@ class Response extends Message implements ResponseInterface
         );
     }
 
-    public static function redirect(string $url, int $status = 302): self
+    /**
+     * @param array<string, string> $headers Additional headers to include in the redirect response.
+     */
+    public static function redirect(string $url, int $status = 302, array $headers = []): self
     {
-        return new self(statusCode: $status, headers: ['Location' => $url]);
+        return new self(statusCode: $status, headers: array_merge(['Location' => $url], $headers));
     }
 
     public static function noContent(): self
