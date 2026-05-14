@@ -21,6 +21,10 @@ nav:
     url: /security
   - title: Request
     url: /request
+  - title: Validation
+    url: /validation
+  - title: Localization
+    url: /localization
   - title: Response
     url: /response
   - title: Database

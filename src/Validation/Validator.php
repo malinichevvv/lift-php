@@ -10,8 +10,10 @@ use Lift\Translation\Translator;
 /**
  * Rule-based input validator.
  *
- * Pipe-delimited string rules or mixed arrays of strings, closures, and
- * {@see RuleInterface} objects are all accepted.
+ * Rules may be written as pipe-delimited strings (Laravel-style) or as arrays
+ * that mix strings, {@see RuleInterface} objects, and closures.
+ *
+ * ### Basic usage
  *
  * ```php
  * $v = new Validator($_POST, [
@@ -21,11 +23,88 @@ use Lift\Translation\Translator;
  *     'password' => 'required|min_length:8|confirmed',
  *     'role'     => 'sometimes|required|in:admin,user',
  *     'website'  => 'nullable|url',
- *     'tags'     => 'array|distinct|min_items:1',
- *     'tags.*'   => 'string',
+ *     'tags'     => 'array|list|distinct|min_items:1',
+ *     'tags.*'   => 'string|max:50',
  *     'status'   => 'required_if:publish,1',
- *     'draft'    => 'prohibited_if:status,published',
+ *     'token'    => 'prohibited_if:role,guest',
  * ]);
+ *
+ * if ($v->fails()) {
+ *     return Response::json(['errors' => $v->errors()], 422);
+ * }
+ *
+ * $data = $v->validated(); // only fields that have rules
+ * ```
+ *
+ * ### Inline rule objects and closures
+ *
+ * Pass an array to mix strings with {@see RuleInterface} instances or closures.
+ * Closures receive a `$fail` callback — call it with an error message to fail.
+ *
+ * ```php
+ * $v = new Validator($data, [
+ *     'phone' => [
+ *         'required',
+ *         new PhoneRule(),                           // implements RuleInterface
+ *         function ($field, $value, $all, $fail) {   // inline closure
+ *             if (!str_starts_with($value, '+')) {
+ *                 $fail('Phone must start with +.');
+ *             }
+ *         },
+ *     ],
+ * ]);
+ * ```
+ *
+ * ### Global custom rule registration
+ *
+ * Register a named rule once (e.g. in a service provider) and use it by name
+ * everywhere. The closure must return `bool`; the optional third argument is the
+ * error template (`:attribute` is replaced with the field label).
+ *
+ * ```php
+ * Validator::extend(
+ *     'isbn13',
+ *     fn ($field, $value, $data) => strlen($value) === 13 && str_starts_with($value, '978'),
+ *     'The :attribute must be a valid ISBN-13.',
+ * );
+ *
+ * // Now usable in any rule string:
+ * $v = new Validator($data, ['book_id' => 'required|isbn13']);
+ * ```
+ *
+ * You can also pass a {@see RuleInterface} instance — its `message()` is used
+ * when no third argument is provided:
+ *
+ * ```php
+ * Validator::extend('luhn', new LuhnRule());
+ * ```
+ *
+ * ### Custom error messages
+ *
+ * Pass an array of messages as the third constructor argument.  Keys follow the
+ * pattern `"field.rule"` (most specific) or just `"rule"` (fallback for all
+ * fields). `:attribute`, `:min`, `:max`, `:value`, `:other`, `:when`, `:values`
+ * placeholders are replaced automatically.
+ *
+ * ```php
+ * $v = new Validator($data, $rules, [
+ *     'email.required' => 'Please enter your email address.',
+ *     'required'       => 'This field cannot be blank.',
+ *     'age.min'        => ':attribute must be at least :min years old.',
+ * ]);
+ * ```
+ *
+ * ### Localization / pluralization
+ *
+ * Set a global translator once (e.g. in bootstrap) or pass one per instance.
+ * Bundled locales: `en`, `ru`. Add more via {@see Translator::addPath()}.
+ *
+ * ```php
+ * // Global default (affects all instances that don't supply their own)
+ * Validator::setTranslator(new Translator('ru'));
+ *
+ * // Per-instance (takes priority over the global default)
+ * $v = new Validator($data, $rules, [], new Translator('de'));
  * ```
  *
  * ---
