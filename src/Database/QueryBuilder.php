@@ -440,6 +440,25 @@ final class QueryBuilder
         } while (count($results) === $size);
     }
 
+    /**
+     * Return a generator that yields one row at a time.
+     *
+     * Unlike {@see get()} which loads all rows into memory at once, `cursor()`
+     * streams results row-by-row — memory stays near-constant for large tables.
+     *
+     * ```php
+     * foreach ($db->table('events')->where('processed', 0)->cursor() as $row) {
+     *     processEvent($row);
+     * }
+     * ```
+     *
+     * @return \Generator<int, array<string, mixed>>
+     */
+    public function cursor(): \Generator
+    {
+        return $this->connection->selectCursor($this->toSql(), $this->getBindings());
+    }
+
     // -----------------------------------------------------------------
     // Execution — writes
     // -----------------------------------------------------------------

@@ -5,6 +5,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-05-15
+
+### Added
+- `RotatingFileHandler` — daily log rotation with configurable `$maxFiles` retention; file naming: `app-2026-05-15.log`.
+- `Model::$casts` — declarative attribute casting on read/write. Supported types: `int`, `float`, `string`, `bool`, `array`/`json` (array ↔ JSON string), `datetime`/`date`/`timestamp` (string/int ↔ `DateTimeImmutable`).
+- `Model::belongsToMany()` — many-to-many relationship via a pivot table. Pivot name defaults to alphabetical snake_case pair (`User ↔ Role` → `role_user`). Accepts explicit `$pivotTable`, `$foreignKey`, `$relatedKey`.
+- `Model::keyName()` — public static method returning the primary key column name.
+- `QueryBuilder::cursor()` — lazy generator that yields one row at a time; constant memory for large tables.
+- `Connection::selectCursor()` — underlying row-streaming method used by `cursor()`.
+- `Support\Date` — timezone-aware date utilities: `now()`, `parse()`, `inTimezone()`, `format()`, `add()`, `sub()`, `startOf()`, `endOf()`, `diffForHumans()`, `isToday()`, `isPast()`, `isFuture()`, `isSameDay()`.
+- `Support\Number` — number and money formatting: `money()` (locale-aware via `intl`, with fallback), `format()`, `percent()`, `fileSize()`, `abbreviate()`, `ordinal()`.
+
 ## [1.0.0] — 2026-05-15
 
 ### Added

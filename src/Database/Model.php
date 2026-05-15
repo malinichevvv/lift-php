@@ -52,6 +52,22 @@ abstract class Model implements ArrayAccess, JsonSerializable
      * ```
      */
     protected array $guarded = [];
+    /**
+     * Attribute type casts.  Keys are column names; values are cast types.
+     *
+     * Supported types: `int`, `integer`, `float`, `double`, `string`,
+     * `bool`, `boolean`, `array`, `json`, `datetime`, `date`, `timestamp`.
+     *
+     * ```php
+     * protected array $casts = [
+     *     'active'     => 'bool',
+     *     'score'      => 'float',
+     *     'meta'       => 'json',      // array ↔ JSON string
+     *     'created_at' => 'datetime',  // string ↔ DateTimeImmutable
+     * ];
+     * ```
+     */
+    protected array $casts = [];
     /** @var array<string, mixed> */
     protected array $attributes = [];
     /** @var array<string, mixed> */
@@ -164,22 +180,36 @@ abstract class Model implements ArrayAccess, JsonSerializable
     {
         foreach ($attributes as $key => $value) {
             if ($this->isFillable((string) $key)) {
-                $this->attributes[(string) $key] = $value;
+                $this->set((string) $key, $value);
             }
         }
         return $this;
     }
 
-    /** Return an attribute value. */
+    /**
+     * Return an attribute value, applying any configured cast.
+     *
+     * ```php
+     * $user->get('active');      // returns bool when cast to 'bool'
+     * $user->get('created_at');  // returns DateTimeImmutable when cast to 'datetime'
+     * $user->get('meta');        // returns array when cast to 'json'
+     * ```
+     */
     public function get(string $key, mixed $default = null): mixed
     {
-        return $this->attributes[$key] ?? $default;
+        if (!array_key_exists($key, $this->attributes)) {
+            return $default;
+        }
+        $value = $this->attributes[$key];
+        return isset($this->casts[$key]) ? $this->castForRead($key, $value) : $value;
     }
 
-    /** Set an attribute value. */
+    /**
+     * Set an attribute value, applying any write cast (e.g. array → JSON string).
+     */
     public function set(string $key, mixed $value): static
     {
-        $this->attributes[$key] = $value;
+        $this->attributes[$key] = isset($this->casts[$key]) ? $this->castForWrite($key, $value) : $value;
         return $this;
     }
 
@@ -258,6 +288,12 @@ abstract class Model implements ArrayAccess, JsonSerializable
     public function getKey(): mixed
     {
         return $this->get(static::$primaryKey);
+    }
+
+    /** Return the primary key column name. */
+    public static function keyName(): string
+    {
+        return static::$primaryKey;
     }
 
     // -----------------------------------------------------------------
@@ -343,14 +379,74 @@ abstract class Model implements ArrayAccess, JsonSerializable
     }
 
     /**
+     * Many-to-many relationship via a pivot table.
+     *
+     * The pivot table name defaults to the two model names in alphabetical order,
+     * snake_cased: `User ↔ Role` → `role_user`.
+     *
+     * ```php
+     * // In User model
+     * public function roles(): array
+     * {
+     *     return $this->belongsToMany(Role::class);
+     *     // SELECT roles.* FROM roles
+     *     //   JOIN role_user ON roles.id = role_user.role_id
+     *     //   WHERE role_user.user_id = {$this->id}
+     * }
+     *
+     * // Custom pivot / keys:
+     * $this->belongsToMany(Role::class, 'user_roles', 'uid', 'rid');
+     * ```
+     *
+     * @template T of Model
+     * @param  class-string<T> $related     Fully-qualified related model class.
+     * @param  string|null     $pivotTable  Pivot table name (default: alphabetical snake_case pair).
+     * @param  string|null     $foreignKey  This model's FK on the pivot (default: `{this_snake}_id`).
+     * @param  string|null     $relatedKey  Related model's FK on the pivot (default: `{related_snake}_id`).
+     * @return T[]
+     */
+    public function belongsToMany(
+        string $related,
+        ?string $pivotTable = null,
+        ?string $foreignKey = null,
+        ?string $relatedKey = null,
+    ): array {
+        $thisSnake    = self::classToSnake(static::class);
+        $relatedSnake = self::classToSnake($related);
+
+        $names = [$thisSnake, $relatedSnake];
+        sort($names);
+        $pivot = $pivotTable ?? implode('_', $names);
+
+        $fk = $foreignKey ?? "{$thisSnake}_id";
+        $rk = $relatedKey ?? "{$relatedSnake}_id";
+
+        $relatedTable = $related::tableName();
+        $relatedPk    = $related::keyName();
+
+        $rows = $related::query()
+            ->join($pivot, "{$relatedTable}.{$relatedPk}", '=', "{$pivot}.{$rk}")
+            ->where("{$pivot}.{$fk}", $this->get(static::$primaryKey))
+            ->get();
+
+        return array_map(fn($row) => $related::hydrate($row), $rows);
+    }
+
+    /**
      * Derive the conventional foreign-key name for this model.
      *
      * `App\Models\BlogPost` → `blog_post_id`
      */
     private function guessForeignKey(): string
     {
-        $short = basename(str_replace('\\', '/', static::class));
-        return strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $short)) . '_id';
+        return self::classToSnake(static::class) . '_id';
+    }
+
+    /** Convert a fully-qualified class name to snake_case short name. */
+    private static function classToSnake(string $class): string
+    {
+        $short = basename(str_replace('\\', '/', $class));
+        return strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $short));
     }
 
     /** Return changed attributes since hydration or last save. */
@@ -365,10 +461,22 @@ abstract class Model implements ArrayAccess, JsonSerializable
         return $dirty;
     }
 
-    /** Return all model attributes. */
+    /**
+     * Return all model attributes with casts applied.
+     *
+     * This is also used by {@see jsonSerialize()}, so JSON output reflects the
+     * cast types (e.g. a `json` column becomes an array, not a string).
+     */
     public function toArray(): array
     {
-        return $this->attributes;
+        if ($this->casts === []) {
+            return $this->attributes;
+        }
+        $result = [];
+        foreach ($this->attributes as $key => $value) {
+            $result[$key] = isset($this->casts[$key]) ? $this->castForRead($key, $value) : $value;
+        }
+        return $result;
     }
 
     public function jsonSerialize(): array
@@ -410,5 +518,67 @@ abstract class Model implements ArrayAccess, JsonSerializable
     private function syncOriginal(): void
     {
         $this->original = $this->attributes;
+    }
+
+    // -----------------------------------------------------------------
+    // Casting
+    // -----------------------------------------------------------------
+
+    /**
+     * Cast a raw database value to the declared PHP type (on read).
+     *
+     * Returns `$value` unchanged when it is `null`.
+     */
+    private function castForRead(string $key, mixed $value): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return match ($this->casts[$key]) {
+            'int', 'integer'   => (int) $value,
+            'float', 'double'  => (float) $value,
+            'string'           => (string) $value,
+            'bool', 'boolean'  => (bool) $value,
+            'array', 'json'    => is_string($value)
+                ? (json_decode($value, true) ?? [])
+                : (array) $value,
+            'datetime'         => $value instanceof \DateTimeInterface
+                ? $value
+                : new \DateTimeImmutable((string) $value),
+            'date'             => $value instanceof \DateTimeInterface
+                ? $value
+                : new \DateTimeImmutable(substr((string) $value, 0, 10)),
+            'timestamp'        => $value instanceof \DateTimeInterface
+                ? $value
+                : (new \DateTimeImmutable())->setTimestamp((int) $value),
+            default            => $value,
+        };
+    }
+
+    /**
+     * Prepare a PHP value for storage (on write).
+     *
+     * Serialises types that cannot be stored directly (arrays → JSON,
+     * DateTimeInterface → formatted string).
+     */
+    private function castForWrite(string $key, mixed $value): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return match ($this->casts[$key]) {
+            'array', 'json'   => (is_array($value) || is_object($value))
+                ? json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)
+                : $value,
+            'datetime', 'date' => $value instanceof \DateTimeInterface
+                ? $value->format('Y-m-d H:i:s')
+                : $value,
+            'timestamp'        => $value instanceof \DateTimeInterface
+                ? $value->getTimestamp()
+                : $value,
+            default            => $value,
+        };
     }
 }

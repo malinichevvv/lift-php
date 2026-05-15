@@ -267,6 +267,25 @@ $db->table('users')
 
 Lift loads 500 rows at a time and calls your callback. Keep an `orderBy('id')` (or another stable column) — otherwise you'll skip / re-process rows when the DB reorders results.
 
+### cursor() — streaming iteration
+
+`cursor()` returns a generator that fetches **one row at a time** from the database. Unlike `chunk()`, there is no callback — use a plain `foreach`. Memory stays near-constant regardless of table size.
+
+```php
+foreach ($db->table('events')->where('processed', 0)->orderBy('id')->cursor() as $row) {
+    processEvent($row);
+}
+```
+
+When to prefer `cursor()` over `chunk()`:
+
+| | `chunk()` | `cursor()` |
+|---|---|---|
+| API | callback-based | `foreach` generator |
+| Memory per step | N rows (chunk size) | 1 row |
+| Early exit | `return false` in callback | `break` in `foreach` |
+| Suitable when | chunk-level operations needed | row-by-row streaming |
+
 ## 6. Transactions
 
 The closure form is recommended — it commits on success and rolls back on any exception:
@@ -556,6 +575,61 @@ protected array $guarded = ['id', 'is_admin'];   // everything else IS mass-assi
 
 Calling `new User($request->json())` only copies allowed keys; the rest are silently dropped.
 
+### Attribute casts
+
+Declare `$casts` to convert raw database values to typed PHP values automatically.
+
+```php
+final class Post extends Model
+{
+    protected static string $table = 'posts';
+    protected array $fillable      = ['title', 'body', 'meta', 'published', 'published_at'];
+
+    protected array $casts = [
+        'published'    => 'bool',
+        'view_count'   => 'int',
+        'score'        => 'float',
+        'meta'         => 'json',         // array ↔ JSON string
+        'published_at' => 'datetime',     // string ↔ DateTimeImmutable
+        'expires_on'   => 'date',         // date portion only
+        'expires_ts'   => 'timestamp',    // Unix int ↔ DateTimeImmutable
+    ];
+}
+```
+
+Casting happens **transparently**:
+
+```php
+$post = Post::find(1);
+
+$post->get('published');    // bool — not "1" / "0"
+$post->get('meta');         // ['key' => 'val'] — not '{"key":"val"}'
+$post->get('published_at'); // DateTimeImmutable — not '2026-05-15 10:00:00'
+
+// Write — serialises back automatically
+$post->set('meta', ['theme' => 'dark']);   // stored as '{"theme":"dark"}'
+$post->set('published_at', new \DateTimeImmutable('now'));  // stored as '2026-05-15 …'
+$post->save();
+
+// toArray() and JSON output also reflect casts
+Response::json($post);   // 'meta' is an object, 'published' is true/false
+```
+
+Supported cast types:
+
+| Type | PHP read type | Write serialisation |
+|---|---|---|
+| `int` / `integer` | `int` | — |
+| `float` / `double` | `float` | — |
+| `string` | `string` | — |
+| `bool` / `boolean` | `bool` | — |
+| `array` / `json` | `array` | `json_encode()` |
+| `datetime` | `DateTimeImmutable` | `Y-m-d H:i:s` |
+| `date` | `DateTimeImmutable` (midnight) | `Y-m-d H:i:s` |
+| `timestamp` | `DateTimeImmutable` | Unix int |
+
+`null` values are passed through without casting.
+
 ### Local scopes
 
 Define `scope{Name}` methods to bundle reusable filters:
@@ -591,6 +665,34 @@ class Post extends Model
 $user = User::find(1);
 foreach ($user->posts() as $post) { … }
 ```
+
+**Many-to-many** via a pivot table:
+
+```php
+class User extends Model
+{
+    // pivot table: role_user (alphabetical order, auto-derived)
+    // columns:     user_id, role_id
+    public function roles(): array { return $this->belongsToMany(Role::class); }
+}
+
+class Role extends Model
+{
+    public function users(): array { return $this->belongsToMany(User::class); }
+}
+
+$user  = User::find(1);
+$roles = $user->roles();   // Role[]
+```
+
+Custom pivot table or foreign key names:
+
+```php
+// belongsToMany(related, pivotTable, thisFk, relatedFk)
+$this->belongsToMany(Role::class, 'user_roles', 'uid', 'rid');
+```
+
+The pivot table name defaults to the two snake_case model names in **alphabetical order**: `User ↔ Role` → `role_user`, `Post ↔ Tag` → `post_tag`.
 
 The helpers run a **separate query each call** — fine for the simple case, but watch out for N+1 in loops. For the N+1 pattern, drop down to a raw join:
 
@@ -697,6 +799,9 @@ $db->transaction(fn($db) => /* … */);
 // Paginate
 $page = $db->table('users')->paginate(1, 20, '/users');
 
+// Stream one row at a time (constant memory)
+foreach ($db->table('events')->cursor() as $row) { … }
+
 // Raw
 $rows = $db->select('SELECT … WHERE x = ?', [$v]);
 
@@ -707,9 +812,14 @@ $rows = $db->select('SELECT … WHERE x = ?', [$v]);
 (new Migrator($db, __DIR__ . '/db/migrations'))->migrate();
 
 // Model
-class User extends Model { protected static string $table = 'users'; protected array $fillable = [...]; }
+class User extends Model {
+    protected static string $table = 'users';
+    protected array $fillable      = ['name', 'email'];
+    protected array $casts         = ['active' => 'bool', 'meta' => 'json', 'created_at' => 'datetime'];
+}
 User::setConnection($db);
 $user = User::find(1);
+$user->roles();   // belongsToMany(Role::class) — via role_user pivot
 ```
 
 [Validation →](validation)

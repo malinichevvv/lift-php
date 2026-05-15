@@ -167,6 +167,25 @@ final class Connection
     }
 
     /**
+     * Execute a raw SELECT and yield one row at a time.
+     *
+     * Keeps memory usage near-constant for large result sets — only one row
+     * is held in memory at once instead of the entire result.
+     *
+     * @return \Generator<int, array<string, mixed>>
+     */
+    public function selectCursor(string $sql, array $bindings = []): \Generator
+    {
+        $t    = microtime(true);
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($bindings);
+        $this->notifyQuery($sql, $bindings, $t);
+        while (($row = $stmt->fetch()) !== false) {
+            yield $row;
+        }
+    }
+
+    /**
      * Execute a raw SELECT and return a single scalar value.
      */
     public function value(string $sql, array $bindings = []): mixed

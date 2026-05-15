@@ -126,16 +126,18 @@ try {
 
 A **handler** decides where lines are written and gates them by minimum level. Built-ins:
 
-| Handler          | Writes to                       |
-|------------------|---------------------------------|
-| `FileHandler`    | A file (creates dir if missing) |
-| `StdoutHandler`  | `php://stdout`                  |
-| `NullHandler`    | Nowhere (useful in tests)       |
+| Handler                | Writes to                                          |
+|------------------------|----------------------------------------------------|
+| `FileHandler`          | A single file (creates dir if missing)             |
+| `RotatingFileHandler`  | Daily-rotated files; prunes old files automatically|
+| `StdoutHandler`        | `php://stdout`                                     |
+| `NullHandler`          | Nowhere (useful in tests)                          |
 
 Each handler takes a minimum level + (optional) formatter:
 
 ```php
 new FileHandler('/var/log/app.log', minLevel: 'warning', formatter: new JsonFormatter());
+new RotatingFileHandler('/var/log/app.log', minLevel: 'info', maxFiles: 30);
 new StdoutHandler(minLevel: 'debug');                  // default formatter = LineFormatter
 new NullHandler();
 ```
@@ -269,28 +271,47 @@ $app->onError(function (\Throwable $e, Request $req) use ($app) {
 
 ## Log rotation
 
-`FileHandler` writes to one file forever. For rotation, two options:
+### Built-in: RotatingFileHandler
 
-1. **External rotation** (recommended on Linux). Use `logrotate` with `copytruncate`:
+`RotatingFileHandler` creates a new file each day and optionally prunes old ones.
 
-   ```
-   /var/log/myapp.log {
-       daily
-       rotate 14
-       missingok
-       notifempty
-       copytruncate
-       compress
-   }
-   ```
+```php
+use Lift\Log\Handler\RotatingFileHandler;
+use Lift\Log\Formatter\JsonFormatter;
 
-2. **Date-stamped path**. Make `FileHandler` write to a daily file:
+new RotatingFileHandler(
+    path:      storage_path('logs/app.log'),   // base path
+    minLevel:  'info',
+    formatter: new JsonFormatter(),
+    maxFiles:  30,    // keep 30 days; 0 = keep forever
+)
+```
 
-   ```php
-   new FileHandler('/var/log/myapp-' . date('Y-m-d') . '.log', 'info');
-   ```
+Files are named by inserting the date before the extension:
 
-   Note: this caches the date on construction. For long-running workers, recreate the logger on day rollover, or write a custom `DailyFileHandler`.
+```
+storage/logs/app.log          ← base path (not created itself)
+storage/logs/app-2026-05-15.log   ← today
+storage/logs/app-2026-05-14.log   ← yesterday
+…
+```
+
+The handler opens the correct file lazily on the first write of each day — safe for long-running workers and queue processes. When `maxFiles > 0`, files beyond the limit are deleted automatically after each rotation.
+
+### External rotation (alternative)
+
+Use `logrotate` with `copytruncate` when you prefer OS-level rotation:
+
+```
+/var/log/myapp.log {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    copytruncate
+    compress
+}
+```
 
 ## Shipping logs to a third party
 
