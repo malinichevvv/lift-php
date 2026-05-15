@@ -174,8 +174,8 @@ $github = HttpClient::new()
     ->withToken('Bearer', $_ENV['GITHUB_TOKEN'])
     ->withHeaders(['Accept' => 'application/vnd.github+json']);
 
-$repo = $github->get('https://api.github.com/repos/lift-php/lift')->throw()->json();
-$prs  = $github->get('https://api.github.com/repos/lift-php/lift/pulls', ['state' => 'open'])->json();
+$repo = $github->get('https://api.github.com/repos/malinichevvv/lift-php')->throw()->json();
+$prs  = $github->get('https://api.github.com/repos/malinichevvv/lift-php/pulls', ['state' => 'open'])->json();
 ```
 
 ### Webhook delivery with idempotency

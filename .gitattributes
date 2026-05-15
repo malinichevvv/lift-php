@@ -1,0 +1,13 @@
+# Files and directories excluded from Packagist dist
+# (they are in the git repo but not downloaded by `composer require`)
+
+/.claude        export-ignore
+/.idea          export-ignore
+/benchmarks     export-ignore
+/docs           export-ignore
+/tests          export-ignore
+
+.gitattributes  export-ignore
+.gitignore      export-ignore
+phpunit.xml     export-ignore
+.phpunit.result.cache export-ignore

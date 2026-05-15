@@ -4,5 +4,9 @@ composer.lock
 .phpunit.result.cache
 .idea/
 *.swp
-/storage/sessions
+/storage/
 .claude
+
+# Internal development notes
+docs/_improvements.md
+docs/_progress.md

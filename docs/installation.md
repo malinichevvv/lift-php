@@ -40,7 +40,7 @@ Recommended PHP extensions (none are strictly required, but you'll want them):
 mkdir my-app
 cd my-app
 composer init --name="me/my-app" --type=project --no-interaction
-composer require lift-php/lift
+composer require malinichevvv/lift-php
 ```
 
 That's the only dependency. Lift pulls in the small PSR interface packages it needs (`psr/http-message`, `psr/container`, etc.) automatically.
@@ -222,10 +222,10 @@ Full list: [Console (CLI)](console).
 - ❌ **`Class "Lift\App" not found`** → you forgot `require '.../vendor/autoload.php'` at the top of `index.php`.
 - ❌ **`SyntaxError: unexpected token "fn"`** → your PHP is older than 7.4 (Lift requires 8.1+). Run `php -v` to confirm.
 - ❌ **404 for every route except `/`** → your web server isn't rewriting URLs to `index.php`. Re-check the Nginx/Apache config above.
-- ❌ **`composer require lift-php/lift` says "Could not find package"** → if you're trying a not-yet-released version, install from path or VCS:
+- ❌ **`composer require malinichevvv/lift-php` says "Could not find package"** → if you're trying a not-yet-released version, install from path or VCS:
   ```bash
   composer config repositories.lift path /path/to/lift
-  composer require lift-php/lift:@dev
+  composer require malinichevvv/lift-php:@dev
   ```
 
 ## Next steps

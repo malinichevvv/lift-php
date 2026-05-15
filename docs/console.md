@@ -12,7 +12,7 @@ Lift ships a tiny PSR-friendly CLI framework — `Lift\Console\Application` — 
 
 ## Using `vendor/bin/lift`
 
-After `composer require lift-php/lift`, the binary is on PATH for any project:
+After `composer require malinichevvv/lift-php`, the binary is on PATH for any project:
 
 ```bash
 vendor/bin/lift                          # list all commands

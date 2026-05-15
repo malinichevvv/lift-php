@@ -112,4 +112,4 @@ wrk -t4 -c100 -d10s http://localhost:8080/ping
 wrk -t4 -c100 -d10s http://localhost:8080/users/42
 ```
 
-See [`benchmarks/README.md`](https://github.com/lift-php/lift/tree/main/benchmarks) for the full guide.
+See [`benchmarks/README.md`](https://github.com/malinichevvv/lift-web/tree/main/benchmarks) for the full guide.

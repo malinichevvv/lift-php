@@ -87,7 +87,7 @@ Lift's HTTP throughput on the same host, same PHP build, same handler:
 | Slim 4     | 1,718           | 1,427           | 1,429                 |
 | Lumen      | 1,210           |   926           |   777                 |
 
-Reproducible — see [benchmarks/comparison/](https://github.com/lift-php/lift/tree/master/benchmarks/comparison).
+Reproducible — see [benchmarks/comparison/](https://github.com/malinichevvv/lift-web/tree/master/benchmarks/comparison).
 
 ## Learning path
 

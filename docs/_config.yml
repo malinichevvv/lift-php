@@ -1,8 +1,8 @@
 title: Lift
-description: The lifting PHP micro-framework
+description: A fast, minimal PHP micro-framework — PSR-7/11/15, autowiring DI, and zero config
 theme: minima
-url: https://lift-php.github.io
-baseurl: /lift
+url: https://getlift.dev
+baseurl: ""
 
 nav:
   # ── Getting started ────────────────────────────────────────────────

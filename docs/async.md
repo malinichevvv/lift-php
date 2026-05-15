@@ -34,7 +34,7 @@ use Lift\Async\Concurrent;
 use Lift\Http\HttpClient;
 
 [$github, $weather, $stocks] = Concurrent::all([
-    fn() => HttpClient::new()->get('https://api.github.com/repos/lift-php/lift')->json(),
+    fn() => HttpClient::new()->get('https://api.github.com/repos/malinichevvv/lift-php')->json(),
     fn() => HttpClient::new()->get('https://api.weather.gov/...')->json(),
     fn() => HttpClient::new()->get('https://api.iexcloud.io/...')->json(),
 ]);
