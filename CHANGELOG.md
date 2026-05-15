@@ -5,6 +5,12 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-05-15
+
+### Fixed
+- `StdoutHandler`: `STDOUT` constant is undefined in PHP-FPM context (only available in CLI). Handler now opens `php://stdout` as a fallback, making it usable in web server processes (e.g. Docker + php-fpm).
+- `ViewRenderer` / `ViewContext`: `layout()` now accepts an optional second argument `array $data = []`. Extra variables are merged over the current view data before the layout is rendered, allowing views to pass layout-specific variables such as `title` or `canonical` directly at the call site.
+
 ## [1.1.0] — 2026-05-15
 
 ### Added
