@@ -285,8 +285,8 @@ final class Router
 
         // O(1) static fast-path — no regex needed for exact-path routes.
         if (isset($this->static[$method][$path])) {
-            $route   = $this->static[$method][$path];
-            $request = $request->withRouteParams([]);
+            $route = $this->static[$method][$path];
+            // Static routes have no params — skip the Request clone withRouteParams([]).
             return $this->runThroughPipeline($route, $request, $globalMiddleware);
         }
 
@@ -320,8 +320,15 @@ final class Router
     /** @param array<MiddlewareInterface|string> $globalMiddleware */
     private function runThroughPipeline(Route $route, Request $request, array $globalMiddleware): Response
     {
-        $middleware = [...$globalMiddleware, ...$route->getMiddleware()];
-        $pipeline   = new Pipeline($this->container);
+        $routeMiddleware = $route->getMiddleware();
+        $middleware      = $globalMiddleware === [] ? $routeMiddleware : [...$globalMiddleware, ...$routeMiddleware];
+
+        // Fast-path: skip Pipeline object allocation entirely when there is no middleware.
+        if ($middleware === []) {
+            return $this->callHandler($route->getHandler(), $request);
+        }
+
+        $pipeline = new Pipeline($this->container);
         return $pipeline->run(
             $request,
             $middleware,
@@ -358,16 +365,20 @@ final class Router
             $args   = $this->container->resolveParameters($ref->getParameters(), $overrides);
             $result = $instance->{$method}(...$args);
         } elseif (is_callable($handler)) {
-            $closure = \Closure::fromCallable($handler);
-            $ref     = new ReflectionFunction($closure);
-            // Cache only named functions (not closures — each closure is a distinct object)
-            if ($ref->isClosure()) {
-                $args = $this->container->resolveParameters($ref->getParameters(), $overrides);
+            if ($handler instanceof \Closure) {
+                // Reflect the closure directly (no Closure::fromCallable wrapper).
+                // Cache by file:line — stable across requests in persistent processes
+                // (php -S, FPM workers) because the same source position → same signature.
+                $ref      = new ReflectionFunction($handler);
+                $cacheKey = ($ref->getFileName() ?: '') . ':' . $ref->getStartLine();
+                $ref      = self::$handlerReflectionCache[$cacheKey] ??= $ref;
             } else {
+                $closure  = \Closure::fromCallable($handler);
+                $ref      = new ReflectionFunction($closure);
                 $cacheKey = $ref->getName();
-                $ref  = self::$handlerReflectionCache[$cacheKey] ??= $ref;
-                $args = $this->container->resolveParameters($ref->getParameters(), $overrides);
+                $ref      = self::$handlerReflectionCache[$cacheKey] ??= $ref;
             }
+            $args   = $this->container->resolveParameters($ref->getParameters(), $overrides);
             $result = $handler(...$args);
         } elseif (is_string($handler) && class_exists($handler)) {
             $instance = $this->container->make($handler);

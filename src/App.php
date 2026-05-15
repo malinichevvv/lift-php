@@ -17,6 +17,7 @@ use Lift\Debug\ErrorHandler;
 use Lift\Events\EventDispatcher;
 use Lift\Exception\HttpException;
 use Lift\Http\SseResponse;
+use Lift\Http\StringStream;
 use Lift\Http\Request;
 use Lift\Http\Response;
 use Lift\JsonRpc\JsonRpcServer;
@@ -659,10 +660,16 @@ final class App
         }
 
         $body = $response->getBody();
+
+        // StringStream: single cast, no seek/rewind overhead.
+        if ($body instanceof StringStream) {
+            echo (string) $body;
+            return;
+        }
+
         if ($body->isSeekable()) {
             $body->rewind();
         }
-
         echo $body->getContents();
     }
 }

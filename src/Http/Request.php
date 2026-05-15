@@ -31,7 +31,9 @@ final class Request extends Message implements ServerRequestInterface
     ) {
         $this->method = strtoupper($method);
         $this->setHeaders($headers);
-        $this->body = $body ?? Stream::empty();
+        // Defer Stream::empty() allocation — body is rarely read on simple GET requests.
+        // Message::$body is assigned null here; getBody() materialises it on demand.
+        $this->body = $body ?? new StringStream('');
     }
 
     public static function fromGlobals(): self
@@ -39,19 +41,23 @@ final class Request extends Message implements ServerRequestInterface
         $method  = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
         $uri     = Uri::fromServer($_SERVER);
         $headers = self::headersFromServer($_SERVER);
-        $body    = Stream::fromInput();
 
         $parsedBody = [];
+        $body       = null;
+
         if (in_array($method, ['POST', 'PUT', 'PATCH'], true)) {
             $ct = $_SERVER['CONTENT_TYPE'] ?? '';
             if (str_contains($ct, 'application/json')) {
-                $raw        = (string) $body;
+                $raw        = (string) Stream::fromInput();
                 $parsedBody = json_decode($raw, true) ?? [];
-                $body       = Stream::fromString($raw);
+                $body       = new StringStream($raw);
             } else {
                 $parsedBody = $_POST;
+                $body       = Stream::fromInput();
             }
         }
+        // GET/HEAD/DELETE: no body stream opened at all — Stream::empty() is lazy-created
+        // in the constructor only if $body === null and someone calls getBody().
 
         return new self(
             method: $method,
@@ -60,7 +66,7 @@ final class Request extends Message implements ServerRequestInterface
             body: $body,
             queryParams: $_GET,
             parsedBody: $parsedBody,
-            uploadedFiles: self::normalizeFiles($_FILES),
+            uploadedFiles: $_FILES !== [] ? self::normalizeFiles($_FILES) : [],
             serverParams: $_SERVER,
             cookieParams: $_COOKIE,
         );
