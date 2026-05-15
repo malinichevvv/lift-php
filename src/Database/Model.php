@@ -504,6 +504,21 @@ abstract class Model implements ArrayAccess, JsonSerializable
         unset($this->attributes[(string) $offset]);
     }
 
+    public function __get(string $key): mixed
+    {
+        return $this->get($key);
+    }
+
+    public function __set(string $key, mixed $value): void
+    {
+        $this->set($key, $value);
+    }
+
+    public function __isset(string $key): bool
+    {
+        return array_key_exists($key, $this->attributes) && $this->attributes[$key] !== null;
+    }
+
     private function isFillable(string $key): bool
     {
         if ($this->fillable !== []) {

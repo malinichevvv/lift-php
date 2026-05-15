@@ -27,6 +27,12 @@ final class ListenerProvider implements ListenerProviderInterface
         $this->listeners[$eventClass][] = $listener;
     }
 
+    /** Alias for {@see addListener()}. */
+    public function listen(string $eventClass, callable $listener): void
+    {
+        $this->addListener($eventClass, $listener);
+    }
+
     /**
      * @return iterable<callable>
      */

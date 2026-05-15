@@ -5,6 +5,19 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.2] — 2026-05-15
+
+### Added
+- `StreamHandler` — writes log records to any writable PHP stream resource (memory streams, file handles, sockets). Useful for capturing log output in tests via `fopen('php://memory', 'rw')`.
+- `Jwt::sign()` / `Jwt::verify()` — aliases for `encode()` / `decode()` for API familiarity.
+- `Connection::statement()` — alias for `execute()` for familiarity with other frameworks (e.g. Laravel `DB::statement()`).
+- `Collection::paginate(int $page, int $perPage)` — paginate a collection in memory; returns `data`, `total`, `per_page`, `page`, `last_page`, `from`, `to` matching the QueryBuilder paginator shape.
+- `ListenerProvider::listen()` — alias for `addListener()` for consistent API across `EventDispatcher` and `ListenerProvider`.
+- `Model::__get()` / `__set()` / `__isset()` — property access for model attributes (`$model->name` now works in addition to `$model->get('name')` and `$model['name']`).
+
+### Fixed
+- `ArrayCache::set()` with a negative `$ttl` now immediately removes any existing key and returns without storing, per PSR-16 semantics. Previously a negative TTL was silently treated as "never expire".
+
 ## [1.1.1] — 2026-05-15
 
 ### Fixed

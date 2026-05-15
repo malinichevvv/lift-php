@@ -180,6 +180,27 @@ final class Jwt
         return $payload;
     }
 
+    /**
+     * Alias for {@see encode()} — create a signed JWT string.
+     *
+     * @param  array<string, mixed> $payload
+     */
+    public function sign(array $payload): string
+    {
+        return $this->encode($payload);
+    }
+
+    /**
+     * Alias for {@see decode()} — verify a JWT string and return its payload.
+     *
+     * @return array<string, mixed>
+     * @throws JwtException On any validation failure.
+     */
+    public function verify(string $token): array
+    {
+        return $this->decode($token);
+    }
+
     // -----------------------------------------------------------------
     // Internals
     // -----------------------------------------------------------------
