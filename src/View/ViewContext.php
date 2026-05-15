@@ -44,10 +44,12 @@ final class ViewContext
      *
      * Call this at the top of a view file before any output is produced.
      * The layout receives this view's content via `$view->content()`.
+     *
+     * @param array<string, mixed> $data Extra variables merged over view data for the layout only.
      */
-    public function layout(string $layout): void
+    public function layout(string $layout, array $data = []): void
     {
-        $this->renderer->layout($layout);
+        $this->renderer->layout($layout, $data);
     }
 
     /**

@@ -15,13 +15,18 @@ use Lift\Log\Formatter\FormatterInterface;
  */
 final class StdoutHandler extends AbstractHandler
 {
+    /** @var resource */
+    private mixed $stream;
+
     public function __construct(string $minLevel = 'debug', ?FormatterInterface $formatter = null)
     {
         parent::__construct($minLevel, $formatter);
+        // STDOUT is only defined in CLI; in PHP-FPM use the stdout pipe directly.
+        $this->stream = \defined('STDOUT') ? \STDOUT : fopen('php://stdout', 'a');
     }
 
     protected function write(string $formatted): void
     {
-        fwrite(STDOUT, $formatted);
+        fwrite($this->stream, $formatted);
     }
 }

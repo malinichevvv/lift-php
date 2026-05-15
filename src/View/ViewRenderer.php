@@ -30,6 +30,9 @@ final class ViewRenderer
 
     private ?string $layout;
 
+    /** Extra variables merged into the layout context (set via layout($name, $data)). */
+    private array $layoutData = [];
+
     /** Rendered output of the child view before layout wrapping. */
     private string $content = '';
 
@@ -61,7 +64,8 @@ final class ViewRenderer
             return $this->content;
         }
 
-        return $this->include($this->layout, $this->data);
+        $layoutData = $this->layoutData !== [] ? array_replace($this->data, $this->layoutData) : $this->data;
+        return $this->include($this->layout, $layoutData);
     }
 
     /**
@@ -69,12 +73,15 @@ final class ViewRenderer
      *
      * Typically called at the very beginning of a child view file:
      * ```php
-     * <?php $view->layout('layouts.app') ?>
+     * <?php $view->layout('layouts.app', ['title' => 'My Page', 'canonical' => '/about']) ?>
      * ```
+     *
+     * @param array<string, mixed> $data Extra variables merged over view data for the layout only.
      */
-    public function layout(string $layout): void
+    public function layout(string $layout, array $data = []): void
     {
-        $this->layout = $layout;
+        $this->layout     = $layout;
+        $this->layoutData = $data;
     }
 
     /**
