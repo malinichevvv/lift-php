@@ -312,6 +312,39 @@ final class Collection implements \Countable, \IteratorAggregate, \JsonSerializa
         return count($this->items);
     }
 
+    /**
+     * Paginate the collection.
+     *
+     * Returns an array with `data` (a Collection slice), `total`, `per_page`,
+     * `page`, `last_page`, `from`, and `to` — matching the shape of the
+     * database QueryBuilder paginator.
+     *
+     * ```php
+     * $page = Collection::make(range(1, 100))->paginate(page: 2, perPage: 10);
+     * $page['data']->toArray(); // [11, 12, ..., 20]
+     * $page['total'];           // 100
+     * ```
+     *
+     * @return array{data: static, total: int, per_page: int, page: int, last_page: int, from: int, to: int}
+     */
+    public function paginate(int $page = 1, int $perPage = 15): array
+    {
+        $page    = max(1, $page);
+        $total   = $this->count();
+        $offset  = ($page - 1) * $perPage;
+        $data    = new static(array_values(array_slice($this->items, $offset, $perPage)));
+
+        return [
+            'data'      => $data,
+            'total'     => $total,
+            'per_page'  => $perPage,
+            'page'      => $page,
+            'last_page' => (int) ceil($total / max(1, $perPage)),
+            'from'      => $total > 0 ? $offset + 1 : 0,
+            'to'        => min($offset + $perPage, $total),
+        ];
+    }
+
     public function sum(string|callable|null $key = null): int|float
     {
         if ($key === null) {

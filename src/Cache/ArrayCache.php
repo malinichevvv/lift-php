@@ -27,6 +27,10 @@ final class ArrayCache implements CacheInterface
     /** {@inheritdoc} */
     public function set(string $key, mixed $value, int $ttl = 0): bool
     {
+        if ($ttl < 0) {
+            $this->delete($key);
+            return true;
+        }
         $this->store[$key] = [
             'value'   => $value,
             'expires' => $ttl > 0 ? time() + $ttl : 0,

@@ -210,6 +210,16 @@ final class Connection
         return $stmt->rowCount();
     }
 
+    /**
+     * Alias for {@see execute()} — execute a raw SQL statement and return affected rows.
+     *
+     * Provided for familiarity with other frameworks (Laravel `DB::statement`).
+     */
+    public function statement(string $sql, array $bindings = []): int
+    {
+        return $this->execute($sql, $bindings);
+    }
+
     /** Return the last inserted auto-increment ID. */
     public function lastInsertId(): string|false
     {
