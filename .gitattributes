@@ -4,7 +4,6 @@
 /.claude        export-ignore
 /.idea          export-ignore
 /benchmarks     export-ignore
-/docs           export-ignore
 /tests          export-ignore
 
 .gitattributes  export-ignore
