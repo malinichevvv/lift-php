@@ -117,7 +117,12 @@ Bye!
 
 **How it works**
 
-1. Lift looks for `bootstrap/app.php` (then `app.php`) in the current directory. If found, it requires the file and makes the returned value available as `$app`.
+1. Lift looks for bootstrap files in this order:
+   - `bootstrap/app.php`
+   - `app/bootstrap.php`
+   - `app.php`
+   
+   If found, it requires the file and makes the returned value available as `$app`.
 2. Each line is attempted as an expression first (`return (…);`). If it parses, the return value is printed using compact var_export-style output. If it doesn't parse (assignment, control flow, etc.), the line is executed as a statement.
 3. Variables persist across iterations — set `$x = 5` on one line, use `$x` on the next.
 4. Multi-line input: end a line with `\` to continue on the next line.
@@ -137,9 +142,149 @@ Bye!
 |---|---|
 | `--bootstrap=path` | Explicit bootstrap file (overrides auto-detection) |
 
+Example:
+```bash
+lift repl --bootstrap=app/bootstrap.php
+lift repl --bootstrap=/var/www/myapp/bootstrap/app.php
+```
+
 **History** is saved to `~/.lift_repl_history` and loaded on next launch, so you can arrow-up through previous sessions.
 
 **Requirements**: The `readline` PHP extension must be installed (`php-readline` on most Linux distros). The REPL will tell you if it's missing.
+
+---
+
+### Practical REPL examples
+
+#### Check configuration
+
+```
+>>> $app->configuration()->get('app.name')
+"My App"
+
+>>> $app->configuration()->get('database.connections.mysql.host')
+"localhost"
+
+>>> $app->environment()
+"local"
+```
+
+#### Query the database
+
+```
+>>> $app->db()->table('users')->count()
+42
+
+>>> $app->db()->table('users')->where('active', true)->get()
+[{"id":1,"email":"alice@example.com","name":"Alice"}, ...]
+
+>>> $app->db()->table('orders')->where('status', 'pending')->count()
+7
+```
+
+#### Test a model
+
+```
+>>> $user = $app->container()->get(\App\Models\User::class)
+>>> $user->find(1)
+App\Models\User {"id":1,"email":"alice@example.com","name":"Alice","active":true}
+
+>>> $user->find(9999)
+null
+```
+
+#### Check routes
+
+```
+>>> $app->router()->getRoutes()
+[{"path":"/","method":"GET","handler":"App\Http\Controllers\HomeController@index","name":"home"}, ...]
+
+>>> $app->router()->match('GET', '/users/42')
+{"path":"/users/{id}","handler":"App\Http\Controllers\UserController@show","params":{"id":"42"}}
+```
+
+#### Work with cache
+
+```
+>>> $cache = $app->container()->get(\Psr\SimpleCache\CacheInterface::class)
+>>> $cache->get('user:42:profile')
+{"id":42,"name":"Alice","role":"admin"}
+
+>>> $cache->set('test_key', 'test_value', 60)
+true
+>>> $cache->get('test_key')
+"test_value"
+```
+
+#### One-off task — create a user
+
+```
+>>> $app->db()->table('users')->insert([
+...   'email' => 'admin@example.com',
+...   'name' => 'Admin',
+...   'password_hash' => password_hash('secret', PASSWORD_BCRYPT),
+...   'created_at' => time(),
+... ])
+true
+
+>>> $app->db()->table('users')->where('email', 'admin@example.com')->first()
+{"id":43,"email":"admin@example.com","name":"Admin",...}
+```
+
+#### Test a service
+
+```
+>>> $payment = $app->container()->get(\App\Services\PaymentService::class)
+>>> $payment->charge(1000, 'tok_visa')
+{"id":"ch_1234","amount":1000,"status":"succeeded"}
+```
+
+#### Check container bindings
+
+```
+>>> $app->container()->has(\App\Services\PaymentService::class)
+true
+
+>>> $app->container()->make(\Lift\Http\Request::class)
+Lift\Http\Request {...}
+```
+
+#### Debug a variable
+
+```
+>>> $data = ['foo' => 'bar', 'nested' => ['a' => 1, 'b' => 2]]
+>>> $data
+{"foo":"bar","nested":{"a":1,"b":2}}
+```
+
+#### Try an API call
+
+```
+>>> $client = $app->container()->get(\Lift\Http\HttpClient::class)
+>>> $client->get('https://api.github.com/repos/malinichevvv/lift-php')->json()
+{"id":123456789,"name":"lift-php","full_name":"malinichevvv/lift-php",...}
+```
+
+---
+
+### When to use REPL vs alternatives
+
+| Task | REPL | CLI command | Test | Script |
+|------|------|-------------|------|--------|
+| Quick experiment with API | ✅ Best | ❌ Overkill | ❌ Slow | ❌ Boilerplate |
+| One-off data fix | ✅ Good | ✅ Better if reusable | ❌ No | ✅ Good for complex |
+| Debugging production (cautiously) | ✅ Possible | ✅ Safer | ❌ No | ❌ No |
+| Repeated task | ❌ No history | ✅ Perfect | ❌ No | ✅ Yes |
+| Complex logic | ❌ No undo | ✅ Versioned | ✅ Verified | ✅ Versioned |
+
+---
+
+### REPL limitations
+
+- **No undo** — if you delete data with `$app->db()->table('x')->delete()`, it's gone. Be careful in production.
+- **No persistence** — REPL sessions don't save state. Reload to start fresh.
+- **Global state** — changes affect the PHP process only. Other workers/processes won't see them.
+- **Long-running state** — if you open a transaction and forget to commit/rollback, it stays open until REPL exits.
 
 ## Adding your own commands
 

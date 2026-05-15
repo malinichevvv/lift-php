@@ -137,7 +137,12 @@ final class ReplCommand extends Command
         $bootstrap = (string) $input->getOption('bootstrap', '');
 
         if ($bootstrap === '') {
-            foreach ([getcwd() . '/bootstrap/app.php', getcwd() . '/app.php'] as $candidate) {
+            $candidates = [
+                getcwd() . '/bootstrap/app.php',
+                getcwd() . '/app/bootstrap.php',
+                getcwd() . '/app.php',
+            ];
+            foreach ($candidates as $candidate) {
                 if (file_exists($candidate)) {
                     $bootstrap = $candidate;
                     break;
@@ -146,13 +151,15 @@ final class ReplCommand extends Command
         }
 
         if ($bootstrap === '' || !file_exists($bootstrap)) {
+            $output->warn('No bootstrap file found. Tried: bootstrap/app.php, app/bootstrap.php, app.php');
+            $output->writeln('Use --bootstrap=path/to/bootstrap.php to specify manually.');
             return null;
         }
 
         try {
             return require $bootstrap;
         } catch (\Throwable $e) {
-            $output->warn('Could not load bootstrap: ' . $e->getMessage());
+            $output->error('Could not load bootstrap: ' . $e->getMessage());
             return null;
         }
     }
