@@ -177,24 +177,41 @@ final class Container implements ContainerInterface
      * @param array<string, mixed>     $overrides
      * @return mixed[]
      */
+    /**
+     * Per-process cache for class type hierarchy (parents + interfaces).
+     * Avoids repeated class_parents() / class_implements() calls on every request.
+     *
+     * @var array<class-string, list<class-string>>
+     */
+    private static array $typeHierarchyCache = [];
+
     public function resolveParameters(array $params, array $overrides = []): array
     {
+        // Fast-path: nothing to resolve.
+        if ($params === []) {
+            return [];
+        }
+
         $args = [];
 
         // Pre-index override objects by every class/interface they satisfy,
         // so the inner loop below becomes a single O(1) lookup instead of
         // an O(overrides) instanceof scan for each parameter.
+        // Type hierarchy is cached per class — class_parents/class_implements are
+        // expensive and the hierarchy never changes within a process.
         $overridesByType = [];
         foreach ($overrides as $override) {
             if (!is_object($override)) {
                 continue;
             }
-            $overridesByType[get_class($override)] = $override;
-            foreach (class_parents($override) as $parent) {
-                $overridesByType[$parent] ??= $override;
-            }
-            foreach (class_implements($override) as $iface) {
-                $overridesByType[$iface] ??= $override;
+            $class = get_class($override);
+            $overridesByType[$class] = $override;
+            $hierarchy = self::$typeHierarchyCache[$class] ??= [
+                ...class_parents($override),
+                ...class_implements($override),
+            ];
+            foreach ($hierarchy as $ancestor) {
+                $overridesByType[$ancestor] ??= $override;
             }
         }
 

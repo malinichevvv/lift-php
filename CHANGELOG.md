@@ -5,7 +5,17 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [1.1.2] — 2026-05-15
+## [1.1.3] — 2026-05-16
+
+### Performance
+- `StringStream` — new string-backed `StreamInterface` that replaces `fopen('php://temp')` + `fwrite` + `rewind` for every response. All `Response` factory methods (`json()`, `html()`, `text()`) and `Request` empty-body construction now use `StringStream`, eliminating a syscall per request.
+- `App::emit()` — fast path for `StringStream` bodies: avoids `isSeekable()` + `rewind()` + `getContents()` indirection.
+- `Request::fromGlobals()` — skip `Stream::fromInput()` (file-descriptor open) for `GET`, `HEAD`, `DELETE`, and `OPTIONS` requests, which have no body.
+- `Router` — static routes skip the `withRouteParams([])` clone (saves one object allocation). Middleware pipeline is only instantiated when at least one middleware is attached; handlers with no middleware are called directly.
+- `Router` — `Closure` route handler reflection is cached by `{file}:{startLine}` instead of being re-created per request. Non-closure callables are cached by function name.
+- `Container::resolveParameters()` — early return for zero-parameter lists (common case for no-arg handlers). `class_parents()` / `class_implements()` results are cached per class in a static process-level map, avoiding repeated hierarchy traversal.
+
+## [1.1.2] — 2026-05-16
 
 ### Added
 - `StreamHandler` — writes log records to any writable PHP stream resource (memory streams, file handles, sockets). Useful for capturing log output in tests via `fopen('php://memory', 'rw')`.
@@ -18,13 +28,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - `ArrayCache::set()` with a negative `$ttl` now immediately removes any existing key and returns without storing, per PSR-16 semantics. Previously a negative TTL was silently treated as "never expire".
 
-## [1.1.1] — 2026-05-15
+## [1.1.1] — 2026-05-16
 
 ### Fixed
 - `StdoutHandler`: `STDOUT` constant is undefined in PHP-FPM context (only available in CLI). Handler now opens `php://stdout` as a fallback, making it usable in web server processes (e.g. Docker + php-fpm).
 - `ViewRenderer` / `ViewContext`: `layout()` now accepts an optional second argument `array $data = []`. Extra variables are merged over the current view data before the layout is rendered, allowing views to pass layout-specific variables such as `title` or `canonical` directly at the call site.
 
-## [1.1.0] — 2026-05-15
+## [1.1.0] — 2026-05-16
 
 ### Added
 - `RotatingFileHandler` — daily log rotation with configurable `$maxFiles` retention; file naming: `app-2026-05-15.log`.
@@ -36,7 +46,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - `Support\Date` — timezone-aware date utilities: `now()`, `parse()`, `inTimezone()`, `format()`, `add()`, `sub()`, `startOf()`, `endOf()`, `diffForHumans()`, `isToday()`, `isPast()`, `isFuture()`, `isSameDay()`.
 - `Support\Number` — number and money formatting: `money()` (locale-aware via `intl`, with fallback), `format()`, `percent()`, `fileSize()`, `abbreviate()`, `ordinal()`.
 
-## [1.0.0] — 2026-05-15
+## [1.0.0] — 2026-05-16
 
 ### Added
 - Core HTTP: immutable PSR-7 `Request` / `Response`, `Uri`, `Stream`

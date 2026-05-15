@@ -53,7 +53,7 @@ class Response extends Message implements ResponseInterface
         return new self(
             statusCode: $status,
             headers: ['Content-Type' => 'application/json; charset=utf-8'],
-            body: Stream::fromString(json_encode($data, $flags | JSON_THROW_ON_ERROR)),
+            body: new StringStream(json_encode($data, $flags | JSON_THROW_ON_ERROR)),
         );
     }
 
@@ -62,7 +62,7 @@ class Response extends Message implements ResponseInterface
         return new self(
             statusCode: $status,
             headers: ['Content-Type' => 'text/html; charset=utf-8'],
-            body: Stream::fromString($content),
+            body: new StringStream($content),
         );
     }
 
@@ -71,7 +71,7 @@ class Response extends Message implements ResponseInterface
         return new self(
             statusCode: $status,
             headers: ['Content-Type' => 'text/plain; charset=utf-8'],
-            body: Stream::fromString($content),
+            body: new StringStream($content),
         );
     }
 
