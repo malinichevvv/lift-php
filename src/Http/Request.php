@@ -72,6 +72,44 @@ final class Request extends Message implements ServerRequestInterface
         );
     }
 
+    /**
+     * Create a Lift Request from any PSR-7 ServerRequestInterface.
+     *
+     * Enables integration with runtimes that produce PSR-7 requests
+     * (RoadRunner, ReactPHP, …) without coupling Lift to their packages.
+     *
+     * ```php
+     * // RoadRunner worker.php
+     * while ($psr7Request = $psr7Worker->waitRequest()) {
+     *     $request  = Request::fromPsr7($psr7Request);
+     *     $response = $app->handle($request);
+     *     $psr7Worker->respond($response);   // Lift Response IS a ResponseInterface
+     * }
+     * ```
+     */
+    public static function fromPsr7(\Psr\Http\Message\ServerRequestInterface $psr7): self
+    {
+        $parsedBody = $psr7->getParsedBody();
+
+        $request = new self(
+            method:        $psr7->getMethod(),
+            uri:           $psr7->getUri(),
+            headers:       $psr7->getHeaders(),
+            body:          $psr7->getBody(),
+            queryParams:   $psr7->getQueryParams(),
+            parsedBody:    is_array($parsedBody) ? $parsedBody : [],
+            uploadedFiles: $psr7->getUploadedFiles(),
+            serverParams:  $psr7->getServerParams(),
+            cookieParams:  $psr7->getCookieParams(),
+        );
+
+        foreach ($psr7->getAttributes() as $name => $value) {
+            $request = $request->withAttribute($name, $value);
+        }
+
+        return $request;
+    }
+
     // -----------------------------------------------------------------
     // Convenience helpers
     // -----------------------------------------------------------------

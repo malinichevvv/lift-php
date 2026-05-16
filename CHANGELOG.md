@@ -5,6 +5,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-05-16
+
+### Added
+- `Runtime\RoadRunnerWorker` — PSR-7 HTTP worker for RoadRunner. Keeps PHP alive between requests; requires `spiral/roadrunner-http` + a PSR-17 factory (`nyholm/psr7`). Auto-detects the factory from installed packages (Nyholm → Guzzle → Laminas).
+- `Runtime\SwooleServer` — Swoole / OpenSwoole HTTP server adapter. Converts `\Swoole\Http\Request` to a Lift `Request` and emits the Lift `Response` back; configurable via a settings array (host, port, worker_num, …). Requires the `swoole` or `openswoole` PHP extension.
+- `Runtime\FrankenPhpWorker` — FrankenPHP worker-mode adapter. Loops on `frankenphp_handle_request()` and delegates to `Request::fromGlobals()` + `$app->handle()` — no changes to existing application code required.
+- `Request::fromPsr7(ServerRequestInterface $psr7): self` — factory method that converts any PSR-7 server request into a Lift `Request`, including attributes.
+- `docs/runtime.md` — runtime adapter documentation covering setup, configuration, and persistent-state guidelines for all three runtimes.
+
 ## [1.1.3] — 2026-05-16
 
 ### Performance
