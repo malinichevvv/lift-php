@@ -197,15 +197,20 @@ $app = require 'bootstrap/app.php';
 ```caddyfile
 {
     frankenphp
-    order php_server before file_server
+    admin off
+    auto_https off
 }
 
-localhost {
+:8080 {
     root * public
 
+    # Route every request through worker.php.
+    # In worker mode Caddy uses this path to identify the worker pool;
+    # the already-running worker handles the actual request logic.
+    rewrite * /worker.php
+
     php_server {
-        worker worker.php
-        num  4               # worker count; omit to use CPU count
+        worker worker.php 4     # worker count; omit to use CPU count
     }
 }
 ```

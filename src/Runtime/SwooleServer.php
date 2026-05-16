@@ -114,8 +114,8 @@ final class SwooleServer
         $app = $this->app;
 
         $server->on('request', static function (
-            \Swoole\Http\Request  $swooleRequest,
-            \Swoole\Http\Response $swooleResponse,
+            object $swooleRequest,
+            object $swooleResponse,
         ) use ($app): void {
             try {
                 $request  = self::fromSwoole($swooleRequest);
@@ -142,10 +142,12 @@ final class SwooleServer
     /**
      * Convert a Swoole request into a Lift Request.
      *
-     * Swoole exposes headers as lowercase key→value arrays (not PSR-7). This method
-     * normalises them and constructs the URI from the server's `$_SERVER`-equivalent.
+     * Accepts `object` rather than `\Swoole\Http\Request` so the class can be
+     * loaded on systems where the Swoole extension is not installed (extension is
+     * only required at runtime, inside `start()`). Swoole exposes headers as
+     * lowercase key→value arrays (not PSR-7); this method normalises them.
      */
-    private static function fromSwoole(\Swoole\Http\Request $r): Request
+    private static function fromSwoole(object $r): Request
     {
         $server  = $r->server  ?? [];
         $headers = $r->header  ?? [];

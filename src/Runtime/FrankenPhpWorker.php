@@ -42,10 +42,16 @@ use Lift\Http\Request;
  * ```caddyfile
  * {
  *     frankenphp
+ *     admin off
+ *     auto_https off
  * }
  *
- * localhost {
+ * :8080 {
  *     root * public
+ *
+ *     # Route every request through the worker — required for SPA-style routing.
+ *     rewrite * /worker.php
+ *
  *     php_server {
  *         worker worker.php
  *     }
