@@ -73,7 +73,9 @@ The wildcard matches **one** sub-domain level. List the apex separately if you n
 
 ### Credentials caveat
 
-When `credentials: true`, the browser **refuses** wildcard origins. The middleware reflects the request's `Origin` back if it matches the allow-list, and adds `Vary: Origin` so caches differentiate responses per origin. You don't have to do anything — just don't combine `origins: '*'` with `credentials: true`.
+When `credentials: true`, the browser **refuses** wildcard origins. The middleware reflects the request's `Origin` back if it matches the allow-list, and adds `Vary: Origin` so caches differentiate responses per origin.
+
+> **Since 1.2.1:** combining `origins: '*'` with `credentials: true` throws an `InvalidArgumentException` at construction time. Reflecting an arbitrary origin alongside `Access-Control-Allow-Credentials: true` would let any site issue credentialed cross-origin requests. Always pass an explicit allow-list when credentials are enabled.
 
 ### Order matters — register CORS first
 

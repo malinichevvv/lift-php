@@ -224,7 +224,14 @@ final class Router
 
         $url = $this->namedRoutes[$name]->getPath();
         foreach ($params as $key => $value) {
-            $url = (string) preg_replace('/\{' . $key . '(?::[^}]+)?\}/', (string) $value, $url);
+            // preg_replace_callback (not preg_replace) so that "$1", "\1" etc.
+            // inside a parameter value are inserted literally rather than being
+            // interpreted as capture-group backreferences.
+            $url = (string) preg_replace_callback(
+                '/\{' . preg_quote((string) $key, '/') . '(?::[^}]+)?\}/',
+                static fn(): string => (string) $value,
+                $url,
+            );
         }
         return $url;
     }

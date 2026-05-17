@@ -14,7 +14,9 @@ namespace Lift\Queue;
  * where `data` is the inner JSON that is HMAC'd, containing the PHP-serialised job.
  *
  * When no secret is configured the inner JSON is stored directly (legacy mode).
- * Pop operations will accept both formats; push always uses the configured mode.
+ * Security: when a secret IS configured, pop operations reject any payload that
+ * is not in the signed envelope — an unsigned payload is treated as a possible
+ * injection attempt. Without a secret both formats are still accepted.
  *
  * @internal Used by DatabaseQueue, RedisQueue, AmqpQueue.
  */
@@ -74,8 +76,18 @@ trait SerializesJobs
                 );
             }
             $data = json_decode((string) $outer['data'], true);
+        } elseif ($this->secret !== '') {
+            // A secret is configured: every payload MUST arrive in the signed
+            // envelope. Accepting an unsigned payload here would let anyone with
+            // write access to the queue backend bypass HMAC verification entirely
+            // and reach unserialize() — defeating the purpose of signing.
+            throw new \RuntimeException(
+                'Unsigned queue payload rejected: this driver is configured with a '
+                . 'secret, so all payloads must be HMAC-signed. A payload without the '
+                . 'signed envelope may have been injected directly into the queue backend.'
+            );
         } else {
-            // Unsigned / legacy payload
+            // Unsigned / legacy payload (no secret configured on this driver).
             $data = $outer;
         }
 

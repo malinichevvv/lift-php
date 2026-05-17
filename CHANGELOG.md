@@ -5,6 +5,19 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-05-17
+
+### Security
+- **Queue object-injection hardening** (`Queue\SerializesJobs` — affects `RedisQueue`, `DatabaseQueue`, `AmqpQueue`). When a queue driver is configured with a `$secret`, a payload that arrives **without** the signed HMAC envelope is now rejected instead of being handed to `unserialize()`. Previously an unsigned payload silently bypassed HMAC verification, so anyone with write access to the queue backend could inject a crafted serialized object and trigger PHP object injection. Drivers with no secret configured are unchanged.
+- **CORS misconfiguration guard** (`Middleware\CorsMiddleware`). Constructing the middleware with `origins: '*'` **and** `credentials: true` now throws an `InvalidArgumentException`. That combination made the middleware reflect any request `Origin` together with `Access-Control-Allow-Credentials: true`, letting any website make credentialed cross-origin requests and read the response. Pass an explicit list of trusted origins when credentials are required.
+- **SQL identifier guard** (`Database\Grammar::wrap()`). Raw (non-identifier) column/table expressions are still emitted verbatim, but a value containing a stacked-statement separator (`;`), an SQL comment (`--`, `/* */`), a NUL byte, or a newline is now rejected with an `InvalidArgumentException`. This blocks the common mistake of passing user input as a column or order-by name. Legitimate expressions such as `COUNT(*)` and `lower(name) AS n` are unaffected.
+- **Session-fixation defence** (`Http\Session\Session`). When the session ID comes from a client cookie and the backing store holds no session under it, a fresh ID is now minted instead of adopting the client-supplied value. Explicitly supplied IDs and memory-only sessions are unaffected.
+- **Private session files** (`Http\Session\FileSessionStore`). Session files are now `chmod`-ed to `0600` after writing, so session contents are not exposed to other OS users under a permissive process umask.
+
+### Fixed
+- `Router::url()` — parameter values containing `$1` / `\1` are now inserted literally. Previously `preg_replace()` interpreted them as capture-group backreferences and corrupted the generated URL.
+- `FileSessionStore::read()` — now takes a shared lock (`LOCK_SH`), so a read concurrent with a write can no longer observe a half-written session file.
+
 ## [1.2.0] — 2026-05-16
 
 ### Added

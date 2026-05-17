@@ -23,6 +23,8 @@ class Session
 {
     private string $id;
     private bool $started = false;
+    /** Whether $id was taken from an untrusted client cookie (vs. explicit/auto-generated). */
+    private bool $idFromCookie = false;
     /** @var array<string, mixed> */
     private array $data = [];
 
@@ -43,7 +45,17 @@ class Session
         private readonly string $cookieName = 'lift_session',
         private readonly bool|array $allowedClasses = true,
     ) {
-        $this->id = $id ?? ($_COOKIE[$this->cookieName] ?? bin2hex(random_bytes(20)));
+        if ($id !== null) {
+            // Explicit ID supplied by application code — trusted.
+            $this->id = $id;
+        } elseif (isset($_COOKIE[$this->cookieName]) && is_string($_COOKIE[$this->cookieName])) {
+            // ID came from an untrusted client cookie — flagged so start() can
+            // reject a fixed/unknown value (session-fixation defence).
+            $this->id           = $_COOKIE[$this->cookieName];
+            $this->idFromCookie = true;
+        } else {
+            $this->id = bin2hex(random_bytes(20));
+        }
     }
 
     /**
@@ -58,6 +70,18 @@ class Session
         }
 
         $payload = $this->store?->read($this->id);
+
+        // Session-fixation defence: when the ID came from an untrusted client
+        // cookie and the store has no session under it, the value was never
+        // issued by us (an attacker-fixed value or a stale/expired cookie) —
+        // mint a fresh ID rather than adopting it. Genuine sessions resolve to
+        // a stored payload and keep their ID. Explicit/auto-generated IDs and
+        // memory-only sessions (no store) are unaffected.
+        if ($this->idFromCookie && $this->store !== null && $payload === null) {
+            $this->id           = bin2hex(random_bytes(20));
+            $this->idFromCookie = false;
+        }
+
         $data = $payload === null ? [] : unserialize($payload, ['allowed_classes' => $this->allowedClasses]);
         $this->data = is_array($data) ? $data : [];
         $this->data['_flash_old'] ??= [];

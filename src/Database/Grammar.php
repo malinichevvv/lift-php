@@ -28,6 +28,27 @@ final class Grammar
 
         // Raw expressions: anything with spaces, parens, math ops, etc.
         if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_*][a-zA-Z0-9_]*)?$/', $value)) {
+            // A non-identifier string is treated as a raw expression and emitted
+            // verbatim into SQL (e.g. "COUNT(*)", "lower(name) AS n"). Guard against
+            // the obvious injection signals that have no place in a column/table
+            // expression — stacked statements and SQL comments. This blocks the
+            // common case of user input reaching an identifier argument
+            // (orderBy(), select(), where(column), groupBy(), join(), …) without
+            // breaking legitimate function expressions or aliases.
+            if (
+                str_contains($value, "\0")
+                || str_contains($value, ';')
+                || str_contains($value, '--')
+                || str_contains($value, '/*')
+                || str_contains($value, '*/')
+                || preg_match('/[\r\n]/', $value) === 1
+            ) {
+                throw new \InvalidArgumentException(
+                    'Grammar::wrap(): refusing to emit a suspicious identifier/expression. '
+                    . 'Never pass user input as a column, table, or order-by name — '
+                    . 'use bound parameters for values and an explicit allowlist for identifiers.'
+                );
+            }
             return $value;
         }
 

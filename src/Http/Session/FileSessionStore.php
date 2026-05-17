@@ -41,7 +41,16 @@ class FileSessionStore implements SessionStoreInterface
             return null;
         }
 
-        $raw = file_get_contents($file);
+        // Shared lock so a concurrent write() (which holds LOCK_EX) cannot be
+        // observed half-written.
+        $handle = fopen($file, 'r');
+        if ($handle === false) {
+            return null;
+        }
+        flock($handle, LOCK_SH);
+        $raw = stream_get_contents($handle);
+        flock($handle, LOCK_UN);
+        fclose($handle);
         if ($raw === false) {
             return null;
         }
@@ -58,7 +67,11 @@ class FileSessionStore implements SessionStoreInterface
     /** Write the session payload to disk, prepending the expiry timestamp. */
     public function write(string $id, string $payload, int $ttl): void
     {
-        file_put_contents($this->file($id), (time() + $ttl) . "\n" . $payload, LOCK_EX);
+        $file = $this->file($id);
+        file_put_contents($file, (time() + $ttl) . "\n" . $payload, LOCK_EX);
+        // Session files contain authentication state — keep them private to the
+        // owning process user regardless of the process umask.
+        @chmod($file, 0600);
     }
 
     /** Delete the session file, silently ignoring missing files. */

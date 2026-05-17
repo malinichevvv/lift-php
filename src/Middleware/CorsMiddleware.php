@@ -53,6 +53,18 @@ final class CorsMiddleware implements MiddlewareInterface
         private readonly bool $credentials = false,
         private readonly int $maxAge = 86400,
     ) {
+        // Wildcard origin + credentials is an insecure combination: it would
+        // reflect ANY request Origin together with Access-Control-Allow-Credentials,
+        // letting any site make credentialed cross-origin requests and read the
+        // response. Fail fast instead of silently allowing it — pass an explicit
+        // list of trusted origins when credentials are required.
+        if ($origins === '*' && $credentials) {
+            throw new \InvalidArgumentException(
+                'CorsMiddleware: origins "*" cannot be combined with credentials: true. '
+                . 'Specify an explicit list of allowed origins when credentials are enabled.'
+            );
+        }
+
         $this->origins = $origins;
     }
 

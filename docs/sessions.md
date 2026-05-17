@@ -108,6 +108,8 @@ $app->post('/login', function (Request $req) {
 
 Pass `$deleteOldSession: false` if you want to keep the old data accessible elsewhere — almost never the right choice.
 
+> **Since 1.2.1:** as a defence-in-depth measure, when the session ID comes from a client cookie and the store holds no session under it, `start()` mints a fresh ID instead of adopting the client-supplied value. This does not replace calling `regenerate()` on login — an attacker can still fixate a *valid* session before authentication — but it stops a fixed unknown ID from being adopted outright.
+
 ## Destroying a session (logout)
 
 ```php

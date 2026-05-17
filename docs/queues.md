@@ -331,14 +331,17 @@ Now you can `SELECT … WHERE tenant_id = '…'` directly against the queue tabl
 
 ## Security: signed payloads
 
-`RedisQueue` and `DatabaseQueue` serialise jobs with `serialize()`. Anyone with write access to your Redis or DB row could craft a payload that triggers RCE via `unserialize`. Both drivers accept an optional `$secret`:
+`RedisQueue`, `DatabaseQueue`, and `AmqpQueue` serialise jobs with `serialize()`. Anyone with write access to your Redis key, DB row, or AMQP exchange could craft a payload that triggers PHP object injection via `unserialize`. All three drivers accept an optional `$secret`:
 
 ```php
 new RedisQueue($redis, secret: $_ENV['QUEUE_SECRET']);
 new DatabaseQueue($db,   secret: $_ENV['QUEUE_SECRET']);
+new AmqpQueue($channel,  secret: $_ENV['QUEUE_SECRET']);
 ```
 
-When the secret is non-empty, every payload is HMAC-SHA256-signed. The worker rejects unsigned or tampered payloads with an exception. Use the same secret on every worker.
+When the secret is non-empty, every payload is HMAC-SHA256-signed. Use the same secret on every worker.
+
+> **Since 1.2.1:** when a secret is configured, a payload that arrives **without** the signed envelope is rejected outright — it is never passed to `unserialize()`. Earlier versions silently accepted unsigned payloads even when a secret was set, which let an attacker bypass the HMAC check entirely. Configuring a `$secret` is strongly recommended for any non-`sync` queue.
 
 ## Testing
 

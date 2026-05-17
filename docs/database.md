@@ -127,7 +127,9 @@ By default `SELECT *`.
 
 `where('column', null)` is a shortcut for `whereNull('column')`. The supported operators are `=`, `<`, `>`, `<=`, `>=`, `<>`, `!=`, `LIKE`, `NOT LIKE`, `ILIKE` — invalid ones throw `InvalidArgumentException` (which prevents SQL injection through the operator argument).
 
-> **Never** interpolate user input into column/table names. Values are bound parameters automatically; identifiers go through `Grammar::wrap()` and only accept simple names.
+> **Never** interpolate user input into column/table names. Values are bound parameters automatically; identifiers go through `Grammar::wrap()`. Plain names (`users`, `u.name`) are quoted; anything else is treated as a raw expression so that `COUNT(*)` and aliases keep working.
+>
+> **Since 1.2.1:** `Grammar::wrap()` rejects a raw expression that contains a statement separator (`;`), an SQL comment (`--`, `/* */`), a NUL byte, or a newline with an `InvalidArgumentException`. This catches the common mistake of passing user input as a column or `orderBy()` name — but it is a safety net, not a substitute for validating identifiers against your own allow-list.
 
 ### JOINs
 
