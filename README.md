@@ -56,6 +56,17 @@ $app->run();
 
 No config files. No service providers. No magic — just PHP.
 
+## Starter project
+
+Prefer a ready-made project layout over a single file? Scaffold one with Composer:
+
+```bash
+composer create-project malinichevvv/lift-skeleton myapp
+cd myapp && composer serve
+```
+
+[**lift-skeleton**](https://github.com/malinichevvv/lift-skeleton) is a small URL-shortener microservice — a working example of attribute routing, request validation, migrations, a cache layer, per-route middleware, a custom console command, and feature tests.
+
 ## What's included
 
 | Feature | |
