@@ -44,7 +44,7 @@ final class AttributeLoader
      *
      * @var list<class-string<HttpAttributeInterface>>
      */
-    private const array ROUTE_ATTRIBUTES = [
+    private const ROUTE_ATTRIBUTES = [
         Route::class,
         Get::class,
         Post::class,

@@ -406,7 +406,7 @@ final class Validator
             'digits_between'      => $this->validateDigitsBetween($value, (int) ($params[0] ?? 0), (int) ($params[1] ?? PHP_INT_MAX)),
             'date'                => $this->isValidDate($value),
             'date_format'         => $this->validateDateFormat($value, $params[0] ?? 'Y-m-d'),
-            'json'                => is_string($value) && json_validate($value),
+            'json'                => is_string($value) && $this->isValidJson($value),
             'uuid'                => is_string($value) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $value) === 1,
             'mac_address'         => is_string($value) && preg_match('/^([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$/', $value) === 1,
             'regex'               => is_string($value) && $this->pregMatch($params[0] ?? '//', $value) === 1,
@@ -752,6 +752,12 @@ final class Validator
         if (!is_string($value)) return false;
         $d = \DateTime::createFromFormat($format, $value);
         return $d !== false && $d->format($format) === $value;
+    }
+
+    private function isValidJson(string $value): bool
+    {
+        json_decode($value);
+        return json_last_error() === JSON_ERROR_NONE;
     }
 
     private function parseRule(string $rule): array

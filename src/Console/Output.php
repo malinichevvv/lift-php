@@ -7,7 +7,7 @@ namespace Lift\Console;
 /** Thin wrapper around stdout/stderr with colour helpers. */
 final class Output
 {
-    private const array COLOURS = [
+    private const COLOURS = [
         'reset'  => "\033[0m",
         'bold'   => "\033[1m",
         'green'  => "\033[32m",

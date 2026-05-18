@@ -23,7 +23,7 @@ namespace Lift\Database;
  */
 final class QueryBuilder
 {
-    private const array OPERATORS = ['=', '<', '>', '<=', '>=', '<>', '!=', 'LIKE', 'NOT LIKE', 'ILIKE'];
+    private const OPERATORS = ['=', '<', '>', '<=', '>=', '<>', '!=', 'LIKE', 'NOT LIKE', 'ILIKE'];
 
     /** @var string[] */
     private array $selects = ['*'];
