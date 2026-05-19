@@ -59,6 +59,24 @@ class Session
     }
 
     /**
+     * Adopt a session ID taken from the current request's cookies.
+     *
+     * {@see SessionMiddleware} calls this with the per-request cookie value so
+     * the ID is read from the actual request rather than the `$_COOKIE`
+     * superglobal — which is empty under persistent runtimes (RoadRunner,
+     * Swoole). The ID is flagged as cookie-sourced so {@see start()} still
+     * applies the session-fixation defence. No-op once the session has started.
+     */
+    public function setIdFromCookie(string $id): void
+    {
+        if ($this->started || $id === '') {
+            return;
+        }
+        $this->id           = $id;
+        $this->idFromCookie = true;
+    }
+
+    /**
      * Hydrate the session from the backing store.
      *
      * Calling `start()` more than once is safe — subsequent calls are no-ops.

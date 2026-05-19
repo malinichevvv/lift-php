@@ -5,6 +5,17 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.2] — 2026-05-19
+
+### Security
+- **Middleware request mutations preserved for foreign PSR-7 requests** (`App::handle()`, `Routing\Router`). When a middleware passed a PSR-7 `ServerRequestInterface` that was not a `Lift\Http\Request` down the pipeline, the framework substituted `Request::fromGlobals()` (or the pre-middleware request) before invoking the route handler — silently discarding every attribute and mutation the middleware had applied (authentication / tenant context, tracing, rewritten paths, …). A foreign request is now converted with `Request::fromPsr7()`, preserving attributes, body, query, cookies and uploaded files; route params are re-applied in the router. Lift's own middleware always produce a `Lift\Http\Request` and were unaffected.
+- **Session ID read from the request instead of `$_COOKIE`** (`Http\Session\Session`, `Http\Session\SessionMiddleware`). `SessionMiddleware` now feeds the per-request cookie value to the session via the new `Session::setIdFromCookie()`. The `$_COOKIE` superglobal is not populated under persistent runtimes (RoadRunner, Swoole), where the previous behaviour minted a fresh ID on every request and could bind a session to the wrong request context. PHP-FPM behaviour is unchanged; the session-fixation defence still applies to the cookie-sourced ID.
+- **JWT middleware no longer reveals which validation check failed** (`Jwt\JwtMiddleware`). A failed `decode()` previously returned the exception message (`expired`, issuer mismatch, …) in the 401 body, giving an attacker a token-validation oracle. A single neutral message — `Invalid or expired token.` — is now returned.
+- **Database session table name validated** (`Http\Session\DatabaseSessionStore`). The table name is interpolated into SQL (PDO cannot bind identifiers), so the constructor now rejects any value that is not a plain `[A-Za-z0-9_]` identifier with an `InvalidArgumentException` — defence in depth for setups that derive the table name from dynamic configuration.
+
+### Fixed
+- `UploadedFile::moveTo()` — the return values of `rename()`, `move_uploaded_file()`, `fwrite()` and `fclose()` were not checked, yet the file was still marked as moved. A failed move now throws a `RuntimeException` and the `moved` flag is set only on success, eliminating silent upload loss.
+
 ## [1.2.1] — 2026-05-17
 
 ### Security

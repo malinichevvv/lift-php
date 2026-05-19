@@ -65,8 +65,11 @@ final class JwtMiddleware implements MiddlewareInterface
 
         try {
             $payload = $this->jwt->decode($token);
-        } catch (JwtException $e) {
-            return $this->unauthorized($e->getMessage());
+        } catch (JwtException) {
+            // Return a single neutral message — exposing which check failed
+            // (signature, issuer, audience, expiry) gives an attacker a
+            // token-validation oracle.
+            return $this->unauthorized('Invalid or expired token.');
         }
 
         return $handler->handle($request->withAttribute($this->attribute, $payload));

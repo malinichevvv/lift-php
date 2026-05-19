@@ -62,15 +62,25 @@ final class UploadedFile implements UploadedFileInterface
             }
             $this->file->rewind();
             while (!$this->file->eof()) {
-                fwrite($dest, $this->file->read(8192));
+                if (fwrite($dest, $this->file->read(8192)) === false) {
+                    fclose($dest);
+                    throw new RuntimeException("Failed to write uploaded file to: {$targetPath}");
+                }
             }
-            fclose($dest);
+            if (fclose($dest) === false) {
+                throw new RuntimeException("Failed to finalise uploaded file at: {$targetPath}");
+            }
         } elseif (PHP_SAPI === 'cli' || !is_uploaded_file($this->file)) {
-            rename($this->file, $targetPath);
+            if (!rename($this->file, $targetPath)) {
+                throw new RuntimeException("Failed to move uploaded file to: {$targetPath}");
+            }
         } else {
-            move_uploaded_file($this->file, $targetPath);
+            if (!move_uploaded_file($this->file, $targetPath)) {
+                throw new RuntimeException("Failed to move uploaded file to: {$targetPath}");
+            }
         }
 
+        // Only reached when the move actually succeeded.
         $this->moved = true;
     }
 

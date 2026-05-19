@@ -341,7 +341,12 @@ final class Router
             $middleware,
             fn(ServerRequestInterface $req): Response => $this->callHandler(
                 $route->getHandler(),
-                $req instanceof Request ? $req : $request,
+                // When a middleware swaps in a foreign PSR-7 request, convert it
+                // rather than dropping its mutations. Route params are a Lift-only
+                // concept absent from a foreign request, so re-apply them.
+                $req instanceof Request
+                    ? $req
+                    : Request::fromPsr7($req)->withRouteParams($request->getRouteParams()),
             ),
         );
     }

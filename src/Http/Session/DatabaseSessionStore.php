@@ -31,7 +31,14 @@ class DatabaseSessionStore implements SessionStoreInterface
     public function __construct(
         private readonly Connection $connection,
         private readonly string $table = 'sessions',
-    ) {}
+    ) {
+        // The table name is interpolated into SQL (PDO cannot bind identifiers),
+        // so reject anything that is not a plain identifier — defence in depth
+        // for setups that derive the name from dynamic configuration.
+        if (preg_match('/^[A-Za-z0-9_]+$/', $table) !== 1) {
+            throw new \InvalidArgumentException("Invalid session table name: {$table}");
+        }
+    }
 
     /**
      * Select the payload column for the given session ID.

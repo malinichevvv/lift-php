@@ -35,6 +35,14 @@ class SessionMiddleware implements MiddlewareInterface
 
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
+        // Read the session ID from this request's cookies rather than the
+        // $_COOKIE superglobal, which is not populated under persistent
+        // runtimes (RoadRunner, Swoole).
+        $cookie = $request->getCookieParams()[$this->session->cookieName()] ?? null;
+        if (is_string($cookie) && $cookie !== '') {
+            $this->session->setIdFromCookie($cookie);
+        }
+
         $this->session->start();
         try {
             $response = $handler->handle($request->withAttribute($this->attribute, $this->session));

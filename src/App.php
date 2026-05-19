@@ -525,7 +525,11 @@ final class App
                 $request,
                 $this->middleware,
                 function (ServerRequestInterface $req): Response {
-                    $r = $req instanceof Request ? $req : Request::fromGlobals();
+                    // A middleware may legitimately return a foreign PSR-7 request
+                    // (e.g. a third-party PSR-15 middleware). Convert it instead of
+                    // discarding it — fromPsr7() preserves attributes, body, query,
+                    // cookies and uploaded files so middleware mutations survive.
+                    $r = $req instanceof Request ? $req : Request::fromPsr7($req);
                     return $this->router->dispatch($r, []);
                 },
             );
