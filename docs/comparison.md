@@ -51,33 +51,25 @@ Lift targets the same space as Flight PHP, Slim 4, and Lumen — lightweight fra
 
 ## Performance
 
-Numbers are from internal benchmarks (`benchmarks/micro.php`) and community-published results. All measured at 100 concurrent connections, PHP 8.3, OPcache enabled.
+Real numbers from the current benchmark page (`/benchmarks`) under identical conditions.
 
-### Internal micro-benchmark (Lift, PHP 8.3)
+### HTTP throughput snapshot (req/s)
 
-| Operation | ops/s | µs/op |
-|-----------|------:|------:|
-| Static route dispatch | ~534 000 | 1.9 |
-| Dynamic route dispatch | ~364 000 | 2.7 |
-| Container singleton | ~23 500 000 | 0.04 |
-| Container autowire | ~2 000 000 | 0.5 |
-| JWT encode (HS256) | ~628 000 | 1.6 |
-| JWT decode + verify | ~460 000 | 2.2 |
-| AES-256-GCM encrypt | ~626 000 | 1.6 |
-| UUID v7 | ~1 068 000 | 0.9 |
-| `Response::json()` | ~822 000 | 1.2 |
+| Framework | `GET /ping` | `GET /json` | `GET /users/{id}` |
+|-----------|------------:|------------:|------------------:|
+| raw-php   | 9,009       | 9,030       | 8,947             |
+| flight    | 3,923       | 3,833       | 3,679             |
+| **lift**  | **3,437**   | **3,552**   | **3,375**         |
+| slim      | 1,727       | 1,759       | 1,767             |
 
-### HTTP throughput comparison (req/s, wrk, 100c/4t, 10s)
+### Test setup
 
-| Framework | Static route | Dynamic route | Notes |
-|-----------|------------:|---------------:|-------|
-| **Lift** | ~20 000 – 50 000 | ~15 000 – 40 000 | Static O(1), reflection cache |
-| Flight | ~18 000 – 45 000 | ~14 000 – 35 000 | Minimal, no PSR overhead |
-| Slim 4 | ~12 000 – 25 000 | ~10 000 – 20 000 | PSR-7, FastRoute |
-| Lumen | ~8 000 – 18 000 | ~7 000 – 14 000 | Laravel IOC, service providers |
-| Laravel | ~3 000 – 7 000 | ~2 500 – 6 000 | Full framework |
+- PHP 8.3.6 with OPcache + tracing JIT (`64M` JIT buffer)
+- `php -S` (single-process), same host and same run profile for every framework
+- `wrk -t4 -c64 -d30s --latency`
+- ~100,000+ requests per endpoint per framework
 
-> Ranges reflect variability across hardware (local Mac vs CI vs production VPS). Run `benchmarks/micro.php` in your environment for your numbers.
+See [`/benchmarks`](/benchmarks) for latency percentiles, relative bars, and full methodology notes.
 
 ---
 
@@ -112,4 +104,4 @@ wrk -t4 -c100 -d10s http://localhost:8080/ping
 wrk -t4 -c100 -d10s http://localhost:8080/users/42
 ```
 
-See [`benchmarks/README.md`](https://github.com/malinichevvv/lift-web/tree/main/benchmarks) for the full guide.
+See [`/benchmarks`](/benchmarks) for the full guide.
