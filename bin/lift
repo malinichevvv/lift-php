@@ -25,6 +25,7 @@ if (!$loaded) {
 
 use Lift\Console\Application;
 use Lift\Console\Commands\KeyGenerateCommand;
+use Lift\Console\Commands\ListRoutesCommand;
 use Lift\Console\Commands\MakeCommand;
 use Lift\Console\Commands\MakeMigrationCommand;
 use Lift\Console\Commands\ReplCommand;
@@ -48,6 +49,7 @@ $cli->register(new MakeMigrationCommand());
 // utilities
 $cli->register(new KeyGenerateCommand());
 $cli->register(new ReplCommand());
+$cli->register(new ListRoutesCommand());
 
 // If the project has a lift.php bootstrap, load it so app-specific commands are registered.
 $bootstrap = getcwd() . '/lift.php';

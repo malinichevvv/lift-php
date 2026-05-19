@@ -7,6 +7,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.2.2] — 2026-05-19
 
+### Added
+- `routes:list` is now registered out of the box by the bundled `lift` CLI — no `lift.php` wiring required. When invoked without an explicitly supplied `Router`, the command boots the project app from a bootstrap file (`bootstrap/app.php`, `app/bootstrap.php` or `app.php`, overridable via `--bootstrap=`) and prints every registered route.
+
 ### Security
 - **Middleware request mutations preserved for foreign PSR-7 requests** (`App::handle()`, `Routing\Router`). When a middleware passed a PSR-7 `ServerRequestInterface` that was not a `Lift\Http\Request` down the pipeline, the framework substituted `Request::fromGlobals()` (or the pre-middleware request) before invoking the route handler — silently discarding every attribute and mutation the middleware had applied (authentication / tenant context, tracing, rewritten paths, …). A foreign request is now converted with `Request::fromPsr7()`, preserving attributes, body, query, cookies and uploaded files; route params are re-applied in the router. Lift's own middleware always produce a `Lift\Http\Request` and were unaffected.
 - **Session ID read from the request instead of `$_COOKIE`** (`Http\Session\Session`, `Http\Session\SessionMiddleware`). `SessionMiddleware` now feeds the per-request cookie value to the session via the new `Session::setIdFromCookie()`. The `$_COOKIE` superglobal is not populated under persistent runtimes (RoadRunner, Swoole), where the previous behaviour minted a fresh ID on every request and could bind a session to the wrong request context. PHP-FPM behaviour is unchanged; the session-fixation defence still applies to the cookie-sourced ID.

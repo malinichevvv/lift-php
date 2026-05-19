@@ -49,7 +49,7 @@ lift list
 |             | `migrate:status`                 | Табличний стан кожної міграції                         |
 | **queue**   | `queue:work [--queue=...] [--sleep=N] [--max-jobs=N]` | Запустити воркер черги (див. [Черги](queues#running-a-worker)) |
 |             | `queue:table`                    | Вивести SQL/міграцію для створення таблиці черги в БД  |
-| **routes**  | `routes`                         | Перелічити кожен зареєстрований маршрут у таблиці       |
+| **routes**  | `routes:list [--bootstrap=...]`  | Перелічити кожен зареєстрований маршрут у таблиці       |
 | **app**     | `serve [--port=8000]`            | Запустити `php -S` на `public/`                        |
 |             | `key:generate`                   | Вивести випадковий `APP_KEY` (32 байти в base64)       |
 |             | `repl`                           | Запустити інтерактивний PHP REPL із контекстом застосунку |
@@ -540,7 +540,7 @@ vendor/bin/lift make:controller|request|resource|model|middleware|command|job|ev
 vendor/bin/lift make:migration <name>
 vendor/bin/lift migrate / migrate:rollback / migrate:fresh / migrate:status
 vendor/bin/lift queue:work
-vendor/bin/lift routes
+vendor/bin/lift routes:list
 vendor/bin/lift key:generate
 vendor/bin/lift serve --port=8000
 vendor/bin/lift repl [--bootstrap=path/to/app.php]

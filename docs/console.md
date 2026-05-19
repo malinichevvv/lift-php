@@ -49,7 +49,7 @@ lift list
 |             | `migrate:status`                 | Tabular state of every migration                       |
 | **queue**   | `queue:work [--queue=...] [--sleep=N] [--max-jobs=N]` | Start a queue worker (see [Queues](queues#running-a-worker)) |
 |             | `queue:table`                    | Print SQL/migration to create the database-queue table |
-| **routes**  | `routes`                         | List every registered route in a table                 |
+| **routes**  | `routes:list [--bootstrap=...]`  | List every registered route in a table                 |
 | **app**     | `serve [--port=8000]`            | Boot `php -S` on `public/`                             |
 |             | `key:generate`                   | Print a random `APP_KEY` (base64-encoded 32 bytes)     |
 |             | `repl`                           | Start an interactive PHP REPL with app context         |
@@ -540,7 +540,7 @@ vendor/bin/lift make:controller|request|resource|model|middleware|command|job|ev
 vendor/bin/lift make:migration <name>
 vendor/bin/lift migrate / migrate:rollback / migrate:fresh / migrate:status
 vendor/bin/lift queue:work
-vendor/bin/lift routes
+vendor/bin/lift routes:list
 vendor/bin/lift key:generate
 vendor/bin/lift serve --port=8000
 vendor/bin/lift repl [--bootstrap=path/to/app.php]
