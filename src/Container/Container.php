@@ -206,10 +206,10 @@ final class Container implements ContainerInterface
             }
             $class = get_class($override);
             $overridesByType[$class] = $override;
-            $hierarchy = self::$typeHierarchyCache[$class] ??= [
+            $hierarchy = self::$typeHierarchyCache[$class] ??= array_values([
                 ...class_parents($override),
                 ...class_implements($override),
-            ];
+            ]);
             foreach ($hierarchy as $ancestor) {
                 $overridesByType[$ancestor] ??= $override;
             }

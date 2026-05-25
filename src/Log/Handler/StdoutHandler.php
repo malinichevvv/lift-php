@@ -22,7 +22,11 @@ final class StdoutHandler extends AbstractHandler
     {
         parent::__construct($minLevel, $formatter);
         // STDOUT is only defined in CLI; in PHP-FPM use the stdout pipe directly.
-        $this->stream = \defined('STDOUT') ? \STDOUT : fopen('php://stdout', 'a');
+        $stream = \defined('STDOUT') ? \STDOUT : fopen('php://stdout', 'a');
+        if ($stream === false) {
+            throw new \RuntimeException('Unable to open php://stdout');
+        }
+        $this->stream = $stream;
     }
 
     protected function write(string $formatted): void

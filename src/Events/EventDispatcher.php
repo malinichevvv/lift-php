@@ -56,7 +56,7 @@ final class EventDispatcher implements EventDispatcherInterface
     /**
      * Register a listener for an event class or interface.
      *
-     * @param  class-string $eventClass
+     * @param  string $eventClass Event class or interface name.
      * @param  callable     $listener   Receives the event as its only argument.
      */
     public function listen(string $eventClass, callable $listener): self
@@ -90,7 +90,13 @@ final class EventDispatcher implements EventDispatcherInterface
         }
 
         foreach ($subscriber->getSubscribedEvents() as $eventClass => $method) {
-            $this->listen($eventClass, [$subscriber, $method]);
+            if (!is_string($eventClass) || (!class_exists($eventClass) && !interface_exists($eventClass))) {
+                throw new \InvalidArgumentException('Subscriber event keys must be class or interface names.');
+            }
+            if (!is_string($method) || !is_callable([$subscriber, $method])) {
+                throw new \InvalidArgumentException('Subscriber listener methods must exist on the subscriber.');
+            }
+            $this->listen($eventClass, static fn(object $event): mixed => $subscriber->{$method}($event));
         }
         return $this;
     }

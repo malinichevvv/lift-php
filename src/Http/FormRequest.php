@@ -39,10 +39,8 @@ abstract class FormRequest
     /**
      * Build and validate the form object from an HTTP request.
      *
-     * @template T of self
      * @param Request $request Source request.
-     * @param class-string<T>|null $class Explicit subclass, defaults to late static class.
-     * @return T
+     * @param class-string<static>|null $class Explicit subclass, defaults to late static class.
      */
     public static function fromRequest(Request $request, ?string $class = null): static
     {
@@ -56,7 +54,8 @@ abstract class FormRequest
         );
         $prototype->afterValidation($validated, $request);
 
-        return new $class($request, $validated);
+        $form = new $class($request, $validated);
+        return $form;
     }
 
     /**

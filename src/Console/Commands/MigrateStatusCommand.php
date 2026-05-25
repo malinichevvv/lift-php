@@ -36,7 +36,7 @@ final class MigrateStatusCommand extends Command
             $rows[] = [
                 'Ran'       => $item['ran'] ? 'Yes' : 'No',
                 'Batch'     => $item['batch'] !== null ? (string) $item['batch'] : '',
-                'Migration' => $item['migration'] . (!empty($item['missing']) ? ' (file missing)' : ''),
+                'Migration' => $item['migration'],
             ];
         }
 

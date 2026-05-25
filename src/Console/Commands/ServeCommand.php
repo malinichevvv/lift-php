@@ -42,6 +42,6 @@ final class ServeCommand extends Command
             escapeshellarg($root),
         ), $code);
 
-        return $code ?? 0;
+        return $code;
     }
 }

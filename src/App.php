@@ -472,7 +472,7 @@ final class App
             $this->debug(false);
         }
 
-        return $this->debugErrorHandler;
+        return $this->debugErrorHandler ?? throw new \LogicException('Debug error handler was not initialised.');
     }
 
     /**

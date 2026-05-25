@@ -197,7 +197,7 @@ final class Request extends Message implements ServerRequestInterface
     {
         $data = array_merge(
             $this->queryParams,
-            is_array($this->parsedBody) ? $this->parsedBody : [],
+            $this->parsedBody,
             $this->routeParams,
         );
 

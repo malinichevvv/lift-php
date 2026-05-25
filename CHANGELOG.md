@@ -14,6 +14,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - **DatabaseQueue validates and quotes its table identifier** before interpolating it into SQL, closing the same identifier-injection class already guarded elsewhere in the database layer.
 
 ### Fixed
+- The framework source now passes the bundled PHPStan level 8 analysis configuration; fixes include stricter callable validation, safer stream handling, and more precise runtime guards.
 - `QueryBuilder::update()` and `QueryBuilder::delete()` now refuse to run without a `WHERE` clause unless `allowMassUpdate()`, `allowMassDelete()`, or `allowMassMutation()` is called first.
 - `405 Method Not Allowed` responses now include an `Allow` header listing the methods registered for the matched path.
 

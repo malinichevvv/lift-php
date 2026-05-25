@@ -34,25 +34,33 @@ class MemcachedSessionStore implements SessionStoreInterface
      */
     public function read(string $id): ?string
     {
-        $payload = $this->memcached->get($this->key($id));
+        $payload = $this->client()->get($this->key($id));
         return $payload === false ? null : (string) $payload;
     }
 
     /** Store the session payload with a Memcached-level TTL for auto-expiry. */
     public function write(string $id, string $payload, int $ttl): void
     {
-        $this->memcached->set($this->key($id), $payload, $ttl);
+        $this->client()->set($this->key($id), $payload, $ttl);
     }
 
     /** Delete the session item from Memcached. */
     public function destroy(string $id): void
     {
-        $this->memcached->delete($this->key($id));
+        $this->client()->delete($this->key($id));
     }
 
     /** No-op — Memcached expires items natively via TTL. */
     public function gc(int $maxLifetime): void
     {
+    }
+
+    private function client(): \Memcached
+    {
+        if (!$this->memcached instanceof \Memcached) {
+            throw new \LogicException('Memcached client is not available.');
+        }
+        return $this->memcached;
     }
 
     private function key(string $id): string

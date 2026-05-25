@@ -19,7 +19,8 @@ Lift був спроєктований із прицілом на тестовн
 
 ```json
 "require-dev": {
-    "phpunit/phpunit": "^11.0"
+    "phpunit/phpunit": "^11.0",
+    "phpstan/phpstan": "^1.12"
 },
 "autoload-dev": {
     "psr-4": { "Tests\\": "tests/" }
@@ -46,6 +47,13 @@ Lift був спроєктований із прицілом на тестовн
 
 ```bash
 vendor/bin/phpunit
+```
+
+Запуск тестів і статичного аналізу через Composer scripts:
+
+```bash
+composer test
+composer analyse
 ```
 
 ## Ваш перший feature-тест

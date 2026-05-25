@@ -14,16 +14,19 @@ use Psr\EventDispatcher\ListenerProviderInterface;
  */
 final class ListenerProvider implements ListenerProviderInterface
 {
-    /** @var array<class-string, callable[]> */
+    /** @var array<string, list<callable>> */
     private array $listeners = [];
 
     /**
      * Register a listener for a specific event class or interface.
      *
-     * @param class-string $eventClass
+     * @param string $eventClass Event class or interface name.
      */
     public function addListener(string $eventClass, callable $listener): void
     {
+        if (!class_exists($eventClass) && !interface_exists($eventClass)) {
+            throw new \InvalidArgumentException("Event class or interface does not exist: [{$eventClass}]");
+        }
         $this->listeners[$eventClass][] = $listener;
     }
 

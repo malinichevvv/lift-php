@@ -20,7 +20,7 @@ final class ArrayQueue implements QueueInterface
     /** @var array<string, list<array{id: string, job: JobInterface}>> */
     private array $queues = [];
 
-    /** @var list<array{readyAt: int, queue: string, job: JobInterface}> */
+    /** @var list<array{id: string, readyAt: int, queue: string, job: JobInterface}> */
     private array $delayed = [];
 
     /**

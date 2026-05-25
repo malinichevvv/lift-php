@@ -162,6 +162,9 @@ final class Stream implements StreamInterface
     public function read(int $length): string
     {
         $this->assertAttached();
+        if ($length < 1) {
+            return '';
+        }
         if (!$this->isReadable()) {
             throw new RuntimeException('Stream is not readable');
         }
@@ -191,6 +194,7 @@ final class Stream implements StreamInterface
         return $key !== null ? ($meta[$key] ?? null) : $meta;
     }
 
+    /** @phpstan-assert resource $this->resource */
     private function assertAttached(): void
     {
         if ($this->resource === null) {

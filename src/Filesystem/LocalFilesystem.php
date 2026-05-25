@@ -27,7 +27,7 @@ final class LocalFilesystem implements FilesystemInterface
      * @throws \InvalidArgumentException When $root does not exist or cannot be resolved.
      */
     public function __construct(
-        private readonly string  $root,
+        string $root,
         private readonly ?string $publicUrl = null,
     ) {
         if (!is_dir($root) && !mkdir($root, 0755, true) && !is_dir($root)) {

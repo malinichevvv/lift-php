@@ -52,7 +52,15 @@ final class RotatingFileHandler extends AbstractHandler
             $this->rotate($today);
         }
 
-        fwrite($this->stream, $formatted);
+        $stream = $this->stream;
+        if ($stream === null) {
+            $this->rotate($today);
+            $stream = $this->stream;
+        }
+        if ($stream === null) {
+            throw new RuntimeException('Log stream was not opened.');
+        }
+        fwrite($stream, $formatted);
     }
 
     private function rotate(string $date): void

@@ -34,7 +34,7 @@ use ReflectionMethod;
  */
 final class JsonRpcServer
 {
-    /** @var array<string, callable> Registered method name → handler */
+    /** @var array<string, callable(mixed...): mixed> Registered method name → handler */
     private array $methods = [];
 
     /** @var bool Whether to expose exception messages in error responses. */
@@ -97,13 +97,20 @@ final class JsonRpcServer
     {
         $ref      = new ReflectionClass($class);
         $instance = $this->container ? $this->container->make($class) : new $class();
+        if (!is_object($instance)) {
+            throw new \RuntimeException("JSON-RPC service [{$class}] did not resolve to an object.");
+        }
 
         foreach ($ref->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
             foreach ($method->getAttributes(RpcMethod::class) as $attr) {
                 /** @var RpcMethod $rpcAttr */
                 $rpcAttr = $attr->newInstance();
-                $name    = $rpcAttr->name ?? $class . '.' . $method->getName();
-                $this->methods[$name] = [$instance, $method->getName()];
+                $name     = $rpcAttr->name ?? $class . '.' . $method->getName();
+                $callable = [$instance, $method->getName()];
+                if (!is_callable($callable)) {
+                    throw new \RuntimeException("JSON-RPC method [{$name}] is not callable.");
+                }
+                $this->methods[$name] = \Closure::fromCallable($callable);
             }
         }
 
@@ -289,6 +296,7 @@ final class JsonRpcServer
         return ['jsonrpc' => '2.0', 'error' => $error, 'id' => $id];
     }
 
+    /** @param array{code: int, message: string} $error */
     private function errorResponse(int|string|null $id, array $error): Response
     {
         return Response::json($this->errorArray($id, $error));

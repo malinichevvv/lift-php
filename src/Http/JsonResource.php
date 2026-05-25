@@ -25,6 +25,7 @@ use JsonSerializable;
  * return new UserResource($user);
  * ```
  */
+/** @phpstan-consistent-constructor */
 abstract class JsonResource implements JsonSerializable
 {
     public function __construct(protected readonly mixed $resource) {}

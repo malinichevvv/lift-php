@@ -1,0 +1,13 @@
+parameters:
+    reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        -
+            identifier: missingType.iterableValue
+        -
+            identifier: missingType.generics
+        - '#Instantiated class PhpAmqpLib\\#'
+        - '#Instantiated class Spiral\\RoadRunner\\#'
+        - '#PHPDoc tag @var for variable \$psr7 contains unknown class Spiral\\RoadRunner\\#'
+        - '#Call to method (waitRequest|getWorker|respond)\(\) on an unknown class Spiral\\RoadRunner\\#'
+        - '#Call to an undefined method object::(setStatusCode|setHeader|end|rawContent)\(\)\.#'
+        - '#Access to an undefined property object::\$post\.#'

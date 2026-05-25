@@ -65,7 +65,7 @@ final class DebugCollector
                 'line'     => $frame['line']     ?? 0,
                 'class'    => $frame['class']    ?? '',
                 'type'     => $frame['type']     ?? '',
-                'function' => $frame['function'] ?? '',
+                'function' => $frame['function'],
             ];
         }
 

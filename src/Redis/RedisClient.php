@@ -136,7 +136,8 @@ final class RedisClient implements RedisClientInterface
 
     public function zRangeByScore(string $key, string $min, string $max): array
     {
-        return $this->redis->zRangeByScore($key, $min, $max) ?: [];
+        $result = $this->redis->zRangeByScore($key, $min, $max);
+        return is_array($result) ? array_values(array_map('strval', $result)) : [];
     }
 
     public function zRem(string $key, string ...$members): int

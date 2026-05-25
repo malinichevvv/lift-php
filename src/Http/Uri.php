@@ -60,7 +60,7 @@ final class Uri implements UriInterface
         $port   = isset($server['SERVER_PORT']) ? (int) $server['SERVER_PORT'] : 80;
         $uri    = $server['REQUEST_URI'] ?? '/';
 
-        $standardPort = self::STANDARD_PORTS[$scheme] ?? null;
+        $standardPort = self::STANDARD_PORTS[$scheme];
         if ($standardPort === $port) {
             return new self("{$scheme}://{$host}{$uri}");
         }

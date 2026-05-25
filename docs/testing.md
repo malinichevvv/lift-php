@@ -19,7 +19,8 @@ In `composer.json`:
 
 ```json
 "require-dev": {
-    "phpunit/phpunit": "^11.0"
+    "phpunit/phpunit": "^11.0",
+    "phpstan/phpstan": "^1.12"
 },
 "autoload-dev": {
     "psr-4": { "Tests\\": "tests/" }
@@ -46,6 +47,13 @@ Run with:
 
 ```bash
 vendor/bin/phpunit
+```
+
+Run tests and static analysis with Composer scripts:
+
+```bash
+composer test
+composer analyse
 ```
 
 ## Your first feature test

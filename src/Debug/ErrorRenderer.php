@@ -95,7 +95,7 @@ final class ErrorRenderer
             $body['line']      = $e->getLine();
             $body['trace']     = array_map(
                 static fn(array $f): string =>
-                    ($f['class'] ?? '') . ($f['type'] ?? '') . ($f['function'] ?? '')
+                    ($f['class'] ?? '') . ($f['type'] ?? '') . $f['function']
                     . ' (' . ($f['file'] ?? '?') . ':' . ($f['line'] ?? '?') . ')',
                 $e->getTrace(),
             );

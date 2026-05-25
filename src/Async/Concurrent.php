@@ -40,7 +40,7 @@ final class Concurrent
      */
     public static function all(array $tasks): array
     {
-        /** @var Fiber[] $fibers */
+        /** @var array<int, Fiber<mixed, mixed, mixed, void>> $fibers */
         $fibers  = [];
         $results = [];
 
@@ -65,11 +65,6 @@ final class Concurrent
                     if ($fiber->isSuspended()) {
                         $fiber->resume();
                     }
-                }
-                if ($fiber->isTerminated() && $fiber->getReturn() === null) {
-                    // Check for thrown exceptions
-                    // (PHP re-throws inside fiber->start/resume, so this path
-                    // is reached only on clean termination)
                 }
             }
         }
@@ -118,9 +113,11 @@ final class Concurrent
      */
     public static function run(callable $task): mixed
     {
+        $hasResult = false;
         $result = null;
-        $fiber  = new Fiber(static function () use ($task, &$result): void {
+        $fiber = new Fiber(static function () use ($task, &$result, &$hasResult): void {
             $result = $task();
+            $hasResult = true;
         });
 
         $fiber->start();
@@ -130,6 +127,11 @@ final class Concurrent
             }
         }
 
+        if (!$hasResult) {
+            throw new \LogicException('Fiber finished without returning a result.');
+        }
+
+        /** @var T $result */
         return $result;
     }
 }

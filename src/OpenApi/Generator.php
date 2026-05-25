@@ -10,6 +10,7 @@ use Lift\Attribute\Patch;
 use Lift\Attribute\Post;
 use Lift\Attribute\Put;
 use Lift\Attribute\Route;
+use Lift\Attribute\HttpAttributeInterface;
 use Lift\OpenApi\Attribute\ApiOperation;
 use Lift\OpenApi\Attribute\ApiParam;
 use Lift\OpenApi\Attribute\ApiResponse;
@@ -135,6 +136,7 @@ final class Generator
                 continue;
             }
 
+            /** @var HttpAttributeInterface $routeAttr */
             $httpMethod = $this->attributeToHttpMethod($routeAttr);
             $path       = $this->normalizeOpenApiPath($routeAttr->getPath());
 
@@ -189,8 +191,9 @@ final class Generator
                 continue;
             }
             $ref    = new ReflectionClass($class);
+            /** @var ApiSchema|null $attr */
             $attr   = $this->firstAttribute($ref, ApiSchema::class);
-            $name   = $attr?->name !== '' ? $attr->name : $ref->getShortName();
+            $name   = $attr !== null && $attr->name !== '' ? $attr->name : $ref->getShortName();
             $schemas[$name] = $this->classToSchema($ref, $attr?->description ?? '');
         }
 
@@ -331,7 +334,7 @@ final class Generator
      * @template T
      * @param  ReflectionClass|ReflectionMethod $ref
      * @param  class-string<T>                  $attrClass
-     * @return T|null
+     * @return object|null
      */
     private function firstAttribute(ReflectionClass|ReflectionMethod $ref, string $attrClass): ?object
     {

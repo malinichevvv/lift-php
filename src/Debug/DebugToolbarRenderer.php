@@ -200,7 +200,7 @@ final class DebugToolbarRenderer
         }
 
         $totalMs = array_sum(array_column($queries, 'time_ms'));
-        $maxMs   = max(array_column($queries, 'time_ms') ?: [1]);
+        $maxMs   = max(array_column($queries, 'time_ms'));
 
         // Count duplicates
         $sqlCounts = [];
@@ -569,7 +569,8 @@ final class DebugToolbarRenderer
         }
         $html = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
         foreach ($items as $k => $v) {
-            $val = is_array($v) ? json_encode($v) : (string) $v;
+            $encoded = is_array($v) ? json_encode($v) : null;
+            $val = $encoded !== null && $encoded !== false ? $encoded : (string) $v;
             $html .= '<tr><td style="padding:2px 8px;color:#6b7280;min-width:140px">'
                 . $this->e((string) $k) . '</td><td style="padding:2px 8px;color:#e5e7eb">'
                 . $this->e($val) . '</td></tr>';

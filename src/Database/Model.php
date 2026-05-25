@@ -33,6 +33,7 @@ use Lift\Events\EventDispatcher;
  * $user = User::find(1);
  * ```
  */
+/** @phpstan-consistent-constructor */
 abstract class Model implements ArrayAccess, JsonSerializable
 {
     protected static ?Connection $connection = null;

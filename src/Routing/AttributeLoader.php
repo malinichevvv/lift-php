@@ -13,7 +13,6 @@ use Lift\Attribute\Patch;
 use Lift\Attribute\Post;
 use Lift\Attribute\Put;
 use Lift\Attribute\Route;
-use Lift\Container\Container;
 use ReflectionClass;
 use ReflectionMethod;
 
@@ -55,8 +54,12 @@ final class AttributeLoader
 
     public function __construct(
         private readonly Router $router,
-        private readonly Container $container,
-    ) {}
+        mixed $container = null,
+    ) {
+        if ($container !== null && !is_object($container)) {
+            throw new \InvalidArgumentException('AttributeLoader legacy container argument must be an object or null.');
+        }
+    }
 
     /**
      * Scan a single controller class and register all attributed routes.

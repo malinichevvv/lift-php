@@ -52,11 +52,7 @@ final class Hasher
      */
     public function hash(string $password): string
     {
-        $hash = password_hash($password, $this->algorithm->value, $this->options);
-        if ($hash === false) {
-            throw new \RuntimeException('Password hashing failed');
-        }
-        return $hash;
+        return password_hash($password, $this->algorithm->value, $this->options);
     }
 
     /**

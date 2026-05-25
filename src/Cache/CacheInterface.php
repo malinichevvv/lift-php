@@ -57,11 +57,9 @@ interface CacheInterface
     /**
      * Retrieve an item or compute and store it if absent.
      *
-     * @template T
      * @param  string   $key
      * @param  int      $ttl     Seconds until expiry. 0 = no expiry.
-     * @param  callable $factory Called only when the key is missing; must return the value.
-     * @return T|mixed
+     * @param  callable(): mixed $factory Called only when the key is missing; must return the value.
      */
     public function remember(string $key, int $ttl, callable $factory): mixed;
 
