@@ -172,7 +172,7 @@ use Lift\Cache\RedisCache;
 use Lift\Redis\RedisClient;
 
 $app->use(new RateLimitMiddleware(
-    store:         new RedisCache(new RedisClient()),
+    store:         new RedisCache(new RedisClient(), secret: $_ENV['CACHE_HMAC_SECRET']),
     maxRequests:   100,
     windowSeconds: 60,
 ));

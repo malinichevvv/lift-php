@@ -371,6 +371,36 @@ class DatabaseTest extends TestCase
         self::assertSame(1, $this->db->table('users')->count());
     }
 
+    public function testMassUpdateRequiresExplicitOptIn(): void
+    {
+        $this->db->table('users')->insert(['name' => 'Alice', 'email' => 'alice@x.com', 'age' => 30]);
+
+        $this->expectException(\LogicException::class);
+        $this->db->table('users')->update(['age' => 31]);
+    }
+
+    public function testMassDeleteRequiresExplicitOptIn(): void
+    {
+        $this->db->table('users')->insert(['name' => 'Alice', 'email' => 'alice@x.com', 'age' => 30]);
+
+        $this->expectException(\LogicException::class);
+        $this->db->table('users')->delete();
+    }
+
+    public function testMassMutationOptInAllowsWholeTableChanges(): void
+    {
+        $this->db->table('users')->insertMany([
+            ['name' => 'A', 'email' => 'a@x.com', 'age' => 10],
+            ['name' => 'B', 'email' => 'b@x.com', 'age' => 20],
+        ]);
+
+        $updated = $this->db->table('users')->allowMassUpdate()->update(['age' => 99]);
+        self::assertSame(2, $updated);
+
+        $deleted = $this->db->table('users')->allowMassDelete()->delete();
+        self::assertSame(2, $deleted);
+    }
+
     // -----------------------------------------------------------------
     // Pagination
     // -----------------------------------------------------------------

@@ -212,15 +212,21 @@ $app->use(new SessionMiddleware($session));
 | `CACHE_DRIVER` | string | `array`      | Драйвер: `array`, `redis`. |
 | `CACHE_PREFIX` | string | `lift_`      | Префикс, добавляемый к каждому ключу кэша. |
 | `CACHE_TTL`    | int    | `3600`       | TTL по умолчанию в секундах, когда не указан. |
+| `CACHE_HMAC_SECRET` | string | — | Нужен для целостности Redis-кэша в продакшене. |
 
 ```dotenv
 CACHE_DRIVER=redis
 CACHE_PREFIX=myapp_
+CACHE_HMAC_SECRET=change-me-to-32-random-bytes
 ```
 
 ```php
 $cache = match (Env::string('CACHE_DRIVER', 'array')) {
-    'redis' => new RedisCache($redis, Env::string('CACHE_PREFIX', 'lift_')),
+    'redis' => new RedisCache(
+        $redis,
+        Env::string('CACHE_PREFIX', 'lift_'),
+        secret: Env::string('CACHE_HMAC_SECRET') ?? throw new \RuntimeException('CACHE_HMAC_SECRET is required'),
+    ),
     default => new ArrayCache(),
 };
 $app->instance(CacheInterface::class, $cache);
@@ -236,21 +242,24 @@ $app->instance(\Psr\SimpleCache\CacheInterface::class, new Psr16Adapter($cache))
 | `QUEUE_DRIVER`        | string | `sync`       | Драйвер: `sync`, `array`, `redis`, `amqp`. |
 | `QUEUE_DEFAULT`       | string | `default`    | Имя очереди по умолчанию. |
 | `QUEUE_RETRY_AFTER`   | int    | `90`         | Секунды до того, как задача считается проваленной и повторяется. |
+| `QUEUE_SECRET`        | string | —            | HMAC-ключ, нужный Redis/Database/AMQP очередям. |
 
 ```dotenv
 QUEUE_DRIVER=redis
 QUEUE_DEFAULT=default
+QUEUE_SECRET=change-me-to-32-random-bytes
 ```
 
 ```php
 $queue = match (Env::string('QUEUE_DRIVER', 'sync')) {
-    'redis' => new RedisQueue($redis),
+    'redis' => new RedisQueue($redis, secret: Env::string('QUEUE_SECRET') ?? throw new \RuntimeException('QUEUE_SECRET is required')),
     'amqp'  => new AmqpQueue([
                    'host'     => Env::string('RABBITMQ_HOST', 'localhost'),
                    'port'     => Env::int('RABBITMQ_PORT', 5672),
                    'user'     => Env::string('RABBITMQ_USER', 'guest'),
                    'password' => Env::string('RABBITMQ_PASSWORD', 'guest'),
                    'vhost'    => Env::string('RABBITMQ_VHOST', '/'),
+                   'secret'   => Env::string('QUEUE_SECRET') ?? throw new \RuntimeException('QUEUE_SECRET is required'),
                ]),
     'array' => new ArrayQueue(),
     default => new SyncQueue(),

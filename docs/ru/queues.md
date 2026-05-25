@@ -76,7 +76,10 @@ use Lift\Queue\RedisQueue;
 
 $app->singleton(QueueInterface::class, function () use ($app) {
     return match ($_ENV['QUEUE_DRIVER'] ?? 'sync') {
-        'redis' => new RedisQueue($app->make(\Lift\Redis\RedisClientInterface::class)),
+        'redis' => new RedisQueue(
+            $app->make(\Lift\Redis\RedisClientInterface::class),
+            secret: $_ENV['QUEUE_SECRET'],
+        ),
         'db'    => new \Lift\Queue\DatabaseQueue($app->make(\Lift\Database\Connection::class)),
         'array' => new \Lift\Queue\ArrayQueue(),
         default => new SyncQueue(),
@@ -324,6 +327,7 @@ final class TenantJob extends AbstractJob implements HasDatabaseExtra
 new DatabaseQueue(
     $db,
     extraColumns: fn($t) => $t->string('tenant_id', 36)->nullable()->index(),
+    secret: $_ENV['QUEUE_SECRET'],
 );
 ```
 
@@ -331,17 +335,17 @@ new DatabaseQueue(
 
 ## Безопасность: подписанные полезные нагрузки
 
-`RedisQueue`, `DatabaseQueue` и `AmqpQueue` сериализуют задачи через `serialize()`. Любой с доступом на запись к вашему ключу Redis, строке БД или AMQP-обменнику мог бы сконструировать полезную нагрузку, запускающую инъекцию PHP-объекта через `unserialize`. Все три драйвера принимают необязательный `$secret`:
+`RedisQueue`, `DatabaseQueue` и `AmqpQueue` сериализуют задачи через `serialize()`. Любой с доступом на запись к вашему ключу Redis, строке БД или AMQP-обменнику мог бы сконструировать полезную нагрузку, запускающую инъекцию PHP-объекта через `unserialize`. Все три драйвера с общим backend по умолчанию требуют подписанные payload'ы. Передавайте один и тот же непустой `$secret` всем producer'ам и worker'ам:
 
 ```php
 new RedisQueue($redis, secret: $_ENV['QUEUE_SECRET']);
 new DatabaseQueue($db,   secret: $_ENV['QUEUE_SECRET']);
-new AmqpQueue($channel,  secret: $_ENV['QUEUE_SECRET']);
+new AmqpQueue(['secret' => $_ENV['QUEUE_SECRET'], /* broker config... */]);
 ```
 
-Когда секрет непуст, каждая полезная нагрузка подписывается HMAC-SHA256. Используйте один и тот же секрет на каждом воркере.
+Каждая полезная нагрузка подписывается HMAC-SHA256, а неподписанные payload'ы отклоняются до `unserialize()`. Используйте один и тот же секрет на каждом воркере.
 
-> **Начиная с 1.2.1:** когда секрет настроен, полезная нагрузка, прибывшая **без** подписанного конверта, отклоняется сразу — она никогда не передаётся в `unserialize()`. Более ранние версии молча принимали неподписанные полезные нагрузки даже при заданном секрете, что позволяло атакующему полностью обойти проверку HMAC. Настройка `$secret` настоятельно рекомендуется для любой не-`sync` очереди.
+> **Начиная с 1.3.0:** `RedisQueue`, `DatabaseQueue` и `AmqpQueue` по умолчанию отказываются создавать или читать неподписанные payload'ы. Для доверенной legacy/local очереди включите это явно: `allowUnsignedPayloads: true` (`DatabaseQueue` / `RedisQueue`) или `['allow_unsigned_payloads' => true]` (`AmqpQueue`). Не включайте это для общих production-backend'ов.
 
 ## Тестирование
 

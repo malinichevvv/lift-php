@@ -120,7 +120,7 @@ final class SecurityFixesTest extends TestCase
         $db = new Connection('sqlite::memory:');
 
         // Producer with no secret writes an UNSIGNED payload into the table.
-        (new DatabaseQueue($db, table: 'jobs', secret: ''))->push(new SecFixDummyJob());
+        (new DatabaseQueue($db, table: 'jobs', secret: '', allowUnsignedPayloads: true))->push(new SecFixDummyJob());
 
         // A consumer configured with a secret must refuse the unsigned row
         // rather than feeding it to unserialize().
@@ -142,6 +142,21 @@ final class SecurityFixesTest extends TestCase
         $popped = $queue->pop();
         $this->assertInstanceOf(DatabaseJobEnvelope::class, $popped);
         $this->assertInstanceOf(SecFixDummyJob::class, $popped->getInner());
+    }
+
+    public function testQueueRequiresSecretUnlessUnsignedPayloadsExplicitlyAllowed(): void
+    {
+        $db = new Connection('sqlite::memory:');
+        $queue = new DatabaseQueue($db, table: 'jobs');
+
+        $this->expectException(\RuntimeException::class);
+        $queue->push(new SecFixDummyJob());
+    }
+
+    public function testDatabaseQueueRejectsInvalidTableName(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new DatabaseQueue(new Connection('sqlite::memory:'), table: 'jobs; DROP TABLE users');
     }
 }
 

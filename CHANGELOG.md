@@ -5,6 +5,22 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-05-25
+
+### Security
+- **Queue payload signing is now required by default** (`Queue\RedisQueue`, `Queue\DatabaseQueue`, `Queue\AmqpQueue`). Shared-backend queues now refuse to create or consume unsigned PHP-serialized payloads unless the caller explicitly opts into legacy behaviour (`allowUnsignedPayloads: true` or `allow_unsigned_payloads`). This makes HMAC protection the default instead of a production recommendation.
+- **Session object deserialisation is disabled by default** (`Http\Session\Session`). `allowedClasses` now defaults to `false`, so tampered or stale session payloads cannot instantiate application classes unless the app provides an explicit allow-list.
+- **Redis cache object deserialisation is disabled by default** (`Cache\RedisCache`). Cached arrays/scalars continue to work, while cached objects require an explicit `allowedClasses` allow-list. HMAC verification remains available through the `secret` parameter.
+- **DatabaseQueue validates and quotes its table identifier** before interpolating it into SQL, closing the same identifier-injection class already guarded elsewhere in the database layer.
+
+### Fixed
+- `QueryBuilder::update()` and `QueryBuilder::delete()` now refuse to run without a `WHERE` clause unless `allowMassUpdate()`, `allowMassDelete()`, or `allowMassMutation()` is called first.
+- `405 Method Not Allowed` responses now include an `Allow` header listing the methods registered for the matched path.
+
+### Changed
+- Documentation in English, Russian, and Ukrainian now reflects the secure queue/cache/session defaults, the new mass-mutation guard, and required queue/cache secrets in configuration examples.
+- The bundled `lift` CLI version was bumped to `1.3.0`.
+
 ## [1.2.2] — 2026-05-19
 
 ### Added

@@ -150,7 +150,7 @@ $someLibrary->setCache($psr16);   // happy
 
 ## Security: HMAC envelope (Redis)
 
-`RedisCache` accepts an optional `secret` parameter. **Use it in production.**
+`RedisCache` accepts a `secret` parameter. **Use it in production.** Object deserialisation is disabled by default; pass `allowedClasses: [TrustedDto::class]` only when you intentionally cache trusted objects.
 
 ```php
 new RedisCache($redis, secret: $_ENV['CACHE_HMAC_SECRET']);
@@ -158,7 +158,7 @@ new RedisCache($redis, secret: $_ENV['CACHE_HMAC_SECRET']);
 
 Why: the driver uses `unserialize()` internally, and a write to Redis from anywhere (compromised neighbour, misconfigured `MONITOR` user, …) could inject a malicious payload that achieves RCE via PHP object injection on the next `get()`.
 
-With a `secret`, every value is wrapped in `{"v":1,"mac":"<hmac>","data":"<serialized>"}`. The MAC is checked before `unserialize()` — tampered payloads return `null` instead of running anything.
+With a `secret`, every value is wrapped in `{"v":1,"mac":"<hmac>","data":"<serialized>"}`. The MAC is checked before `unserialize()` — tampered payloads return `null`. Even for signed values, Lift now passes `allowed_classes: false` unless you provide an allow-list.
 
 Rotation: when the secret changes, all existing entries appear as cache misses (`null`) and are repopulated naturally.
 
@@ -266,6 +266,7 @@ A Memcached driver in ~40 lines is left as an exercise — wrap `ext-memcached`.
 |---|---|---|
 | Cache always empty under PHP-FPM | Using `ArrayCache` in production | Switch to `RedisCache`. |
 | `get()` returns old data after deploy | Shape changed; old cache still alive | Bump cache-key version (`user:v2:…`). |
+| Cached object comes back as `__PHP_Incomplete_Class` | Object deserialisation is disabled by default | Store arrays/scalars, or pass `allowedClasses: [TrustedDto::class]`. |
 | `unserialize()` warning + 500 | Stored an object whose class no longer exists, or got a tampered payload | Use `secret` + invalidate the key. |
 | `increment()` returns 0 on Redis miss | `incr` creates the key with 1, so first call returns **1** not 0 | That's correct — read carefully. |
 | Two requests both run the factory in `remember()` | The "thundering herd" — first miss races | For very expensive ops, take a Redis lock around the work; or pre-warm. |

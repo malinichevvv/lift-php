@@ -314,7 +314,10 @@ final class Router
 
         if ($matched === null) {
             throw $methodNotAllowed
-                ? new MethodNotAllowedException("Method {$method} not allowed for {$path}")
+                ? new MethodNotAllowedException(
+                    "Method {$method} not allowed for {$path}",
+                    $this->allowedMethodsFor($path),
+                )
                 : new NotFoundException("No route matched: {$path}");
         }
 
@@ -322,6 +325,22 @@ final class Router
         $request = $request->withRouteParams($params);
 
         return $this->runThroughPipeline($route, $request, $globalMiddleware);
+    }
+
+    /** @return list<string> */
+    private function allowedMethodsFor(string $path): array
+    {
+        $methods = $this->staticPathMethods[$path] ?? [];
+
+        foreach ($this->routes as $route) {
+            if ($route->pathMatches($path)) {
+                array_push($methods, ...$route->getMethods());
+            }
+        }
+
+        $methods = array_values(array_unique($methods));
+        sort($methods);
+        return $methods;
     }
 
     /** @param array<MiddlewareInterface|string> $globalMiddleware */

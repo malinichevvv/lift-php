@@ -130,6 +130,8 @@ By default `SELECT *`.
 > **Never** interpolate user input into column/table names. Values are bound parameters automatically; identifiers go through `Grammar::wrap()`. Plain names (`users`, `u.name`) are quoted; anything else is treated as a raw expression so that `COUNT(*)` and aliases keep working.
 >
 > **Since 1.2.1:** `Grammar::wrap()` rejects a raw expression that contains a statement separator (`;`), an SQL comment (`--`, `/* */`), a NUL byte, or a newline with an `InvalidArgumentException`. This catches the common mistake of passing user input as a column or `orderBy()` name — but it is a safety net, not a substitute for validating identifiers against your own allow-list.
+>
+> **Since 1.3.0:** `update()` and `delete()` refuse to run without a `WHERE` clause. For an intentional whole-table operation, call `allowMassUpdate()`, `allowMassDelete()`, or `allowMassMutation()` first.
 
 ### JOINs
 
@@ -775,7 +777,7 @@ To shape the output (hide passwords, rename fields), wrap in a [JsonResource](js
 | `Invalid WHERE operator: [contains]` | Used a non-SQL operator | Stick to the operator list; use `LIKE` for substring. |
 | Update affects 0 rows but I expected 1 | Your `where()` didn't match | Re-check identifiers; cast types (`(int)$id`). |
 | Bulk insert silently does nothing | Empty array | `insertMany([])` is a no-op; the framework doesn't error. |
-| Massive `UPDATE` ran without `WHERE` | You forgot `->where(...)` | Always chain `where` first; in code review require it. |
+| Massive `UPDATE` ran without `WHERE` | You forgot `->where(...)` | Lift now refuses it by default; add `where` or explicit `allowMassUpdate()`. |
 | `N+1` queries (one per loop iteration) | `Model::hasMany()` inside a loop | Use a single JOIN, or pre-fetch IDs and group manually. |
 | Migration order is random | File system order isn't guaranteed | Lift sorts files by name — always prefix with timestamp `YYYY_MM_DD_HHMMSS_`. |
 | `lastInsertId()` returns `0` | PostgreSQL + no sequence | Use `RETURNING id` via `selectOne` or set a sequence. |

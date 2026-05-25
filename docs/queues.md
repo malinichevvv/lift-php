@@ -76,7 +76,10 @@ use Lift\Queue\RedisQueue;
 
 $app->singleton(QueueInterface::class, function () use ($app) {
     return match ($_ENV['QUEUE_DRIVER'] ?? 'sync') {
-        'redis' => new RedisQueue($app->make(\Lift\Redis\RedisClientInterface::class)),
+        'redis' => new RedisQueue(
+            $app->make(\Lift\Redis\RedisClientInterface::class),
+            secret: $_ENV['QUEUE_SECRET'],
+        ),
         'db'    => new \Lift\Queue\DatabaseQueue($app->make(\Lift\Database\Connection::class)),
         'array' => new \Lift\Queue\ArrayQueue(),
         default => new SyncQueue(),
@@ -324,6 +327,7 @@ final class TenantJob extends AbstractJob implements HasDatabaseExtra
 new DatabaseQueue(
     $db,
     extraColumns: fn($t) => $t->string('tenant_id', 36)->nullable()->index(),
+    secret: $_ENV['QUEUE_SECRET'],
 );
 ```
 
@@ -331,17 +335,17 @@ Now you can `SELECT … WHERE tenant_id = '…'` directly against the queue tabl
 
 ## Security: signed payloads
 
-`RedisQueue`, `DatabaseQueue`, and `AmqpQueue` serialise jobs with `serialize()`. Anyone with write access to your Redis key, DB row, or AMQP exchange could craft a payload that triggers PHP object injection via `unserialize`. All three drivers accept an optional `$secret`:
+`RedisQueue`, `DatabaseQueue`, and `AmqpQueue` serialise jobs with `serialize()`. Anyone with write access to your Redis key, DB row, or AMQP exchange could craft a payload that triggers PHP object injection via `unserialize`. All three shared-backend drivers require signed payloads by default. Pass the same non-empty `$secret` to every producer and worker:
 
 ```php
 new RedisQueue($redis, secret: $_ENV['QUEUE_SECRET']);
 new DatabaseQueue($db,   secret: $_ENV['QUEUE_SECRET']);
-new AmqpQueue($channel,  secret: $_ENV['QUEUE_SECRET']);
+new AmqpQueue(['secret' => $_ENV['QUEUE_SECRET'], /* broker config... */]);
 ```
 
-When the secret is non-empty, every payload is HMAC-SHA256-signed. Use the same secret on every worker.
+Every payload is HMAC-SHA256-signed and unsigned payloads are rejected before `unserialize()`. Use the same secret on every worker.
 
-> **Since 1.2.1:** when a secret is configured, a payload that arrives **without** the signed envelope is rejected outright — it is never passed to `unserialize()`. Earlier versions silently accepted unsigned payloads even when a secret was set, which let an attacker bypass the HMAC check entirely. Configuring a `$secret` is strongly recommended for any non-`sync` queue.
+> **Since 1.3.0:** `RedisQueue`, `DatabaseQueue`, and `AmqpQueue` refuse to create or consume unsigned payloads by default. For a trusted legacy/local queue, opt in explicitly with `allowUnsignedPayloads: true` (`DatabaseQueue` / `RedisQueue`) or `['allow_unsigned_payloads' => true]` (`AmqpQueue`). Do not enable this for shared production backends.
 
 ## Testing
 

@@ -214,9 +214,12 @@ If you need different cookie attributes (e.g. `SameSite=Strict`, a parent domain
 - ✅ Call `$session->destroy()` on logout.
 - ✅ For sensitive data, **don't** put it in the session — only an opaque user ID. Look the rest up server-side on each request.
 - ✅ Set a reasonable `lifetime`. 2 hours is the default; 30 minutes is safer for admin areas.
+
+> **Since 1.3.0:** object deserialisation is disabled by default (`allowedClasses: false`). This keeps tampered or stale session payloads from instantiating application classes.
+
 - ❌ Don't serialise objects with secrets into the session — pass the allowed-classes whitelist or store IDs only:
   ```php
-  new Session($store, allowedClasses: false);          // no objects, scalars only
+  new Session($store);                                // no objects by default
   new Session($store, allowedClasses: [Money::class]); // explicit allowlist
   ```
 

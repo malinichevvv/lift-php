@@ -42,6 +42,7 @@ final class QueryBuilder
     private ?int $offsetVal = null;
     /** @var 'update'|'share'|null */
     private ?string $lock = null;
+    private bool $allowMassMutation = false;
     private bool $lockSkipLocked = false;
 
     public function __construct(
@@ -266,6 +267,27 @@ final class QueryBuilder
     public function take(int $value): self
     {
         return $this->limit($value);
+    }
+
+    /**
+     * Explicitly allow update() / delete() without a WHERE clause.
+     *
+     * Use this only for deliberate whole-table maintenance operations.
+     */
+    public function allowMassMutation(): self
+    {
+        $this->allowMassMutation = true;
+        return $this;
+    }
+
+    public function allowMassUpdate(): self
+    {
+        return $this->allowMassMutation();
+    }
+
+    public function allowMassDelete(): self
+    {
+        return $this->allowMassMutation();
     }
 
     // -----------------------------------------------------------------
@@ -513,6 +535,8 @@ final class QueryBuilder
      */
     public function update(array $data): int
     {
+        $this->assertWhereOrMassMutationAllowed('update');
+
         $sets = array_map(fn($c) => $this->grammar->wrap($c) . ' = ?', array_keys($data));
         $sql  = sprintf('UPDATE %s SET %s', $this->grammar->wrap($this->table), implode(', ', $sets));
 
@@ -533,6 +557,8 @@ final class QueryBuilder
      */
     public function delete(): int
     {
+        $this->assertWhereOrMassMutationAllowed('delete');
+
         $sql = sprintf('DELETE FROM %s', $this->grammar->wrap($this->table));
 
         $bindings = [];
@@ -625,6 +651,16 @@ final class QueryBuilder
     // -----------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------
+
+    private function assertWhereOrMassMutationAllowed(string $operation): void
+    {
+        if ($this->wheres === [] && !$this->allowMassMutation) {
+            throw new \LogicException(
+                "Refusing to {$operation} every row in [{$this->table}] without a WHERE clause. "
+                . 'Call allowMassMutation(), allowMassUpdate(), or allowMassDelete() when this is intentional.'
+            );
+        }
+    }
 
     private function selectRaw(string $expression): self
     {

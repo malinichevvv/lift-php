@@ -20,7 +20,7 @@ use Lift\Redis\RedisClientInterface;
  * - `{prefix}:queue:{name}:delayed` — sorted set (score = ready-at UNIX timestamp)
  *
  * ```php
- * $queue = new RedisQueue(new RedisClient());
+ * $queue = new RedisQueue(new RedisClient(), secret: $_ENV['QUEUE_SECRET']);
  * $app->instance(QueueInterface::class, $queue);
  *
  * // In a CLI worker:
@@ -35,14 +35,16 @@ final class RedisQueue implements QueueInterface
     /**
      * @param RedisClientInterface $redis
      * @param string $prefix  Redis key prefix.
-     * @param string $secret  When non-empty, queue payloads are HMAC-signed (SHA-256).
-     *                        Use the same secret on all workers. Prevents RCE via
-     *                        deserialization of tampered payloads in a compromised Redis.
+     * @param string $secret  Non-empty secret used to HMAC-sign payloads. Required unless
+     *                        $allowUnsignedPayloads is explicitly enabled for trusted legacy queues.
+     * @param bool $allowUnsignedPayloads Allow unsigned PHP-serialized payloads. Use only for
+     *                        local development or trusted legacy queues.
      */
     public function __construct(
         private readonly RedisClientInterface $redis,
         private readonly string $prefix = 'lift',
         private readonly string $secret = '',
+        private readonly bool $allowUnsignedPayloads = false,
     ) {}
 
     /**

@@ -43,7 +43,7 @@ class Session
         ?string $id = null,
         private readonly int $lifetime = 7200,
         private readonly string $cookieName = 'lift_session',
-        private readonly bool|array $allowedClasses = true,
+        private readonly bool|array $allowedClasses = false,
     ) {
         if ($id !== null) {
             // Explicit ID supplied by application code — trusted.

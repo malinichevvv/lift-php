@@ -17,12 +17,13 @@ use Lift\Database\Schema\Schema;
  *
  * ```php
  * // Minimal — uses the "jobs" table, auto-created
- * $queue = new DatabaseQueue($db);
+ * $queue = new DatabaseQueue($db, secret: $_ENV['QUEUE_SECRET']);
  *
  * // Custom table + extra column
  * $queue = new DatabaseQueue(
  *     db: $db,
  *     table: 'queue_jobs',
+ *     secret: $_ENV['QUEUE_SECRET'],
  *     extraColumns: function (Blueprint $t): void {
  *         $t->string('tenant_id', 36)->nullable()->index();
  *     },
@@ -81,6 +82,7 @@ final class DatabaseQueue implements QueueInterface
 
     private bool $tableChecked = false;
     private readonly ?\Closure $extraColumns;
+    private readonly string $tableSql;
 
     /**
      * @param Connection    $db               PDO connection.
@@ -88,8 +90,10 @@ final class DatabaseQueue implements QueueInterface
      * @param callable|null $extraColumns     `function (Blueprint $table): void` — add custom columns.
      * @param int           $reservedTimeout  Seconds after which a reserved-but-unfinished row is
      *                                        released back to the queue (crash recovery).
-     * @param string        $secret           When non-empty, payloads are HMAC-signed (SHA-256).
-     *                                        Prevents RCE via deserialization of tampered DB rows.
+     * @param string        $secret           Non-empty secret used to HMAC-sign payloads. Required unless
+     *                                        $allowUnsignedPayloads is explicitly enabled for trusted legacy queues.
+     * @param bool          $allowUnsignedPayloads Allow unsigned PHP-serialized payloads. Use only for local
+     *                                        development or trusted legacy queues.
      */
     public function __construct(
         private readonly Connection $db,
@@ -97,7 +101,10 @@ final class DatabaseQueue implements QueueInterface
         ?callable $extraColumns = null,
         private readonly int $reservedTimeout = 60,
         private readonly string $secret = '',
+        private readonly bool $allowUnsignedPayloads = false,
     ) {
+        $this->assertIdentifier($table, 'queue table');
+        $this->tableSql = $this->db->getGrammar()->wrap($table);
         $this->extraColumns = $extraColumns !== null ? \Closure::fromCallable($extraColumns) : null;
     }
 
@@ -131,7 +138,7 @@ final class DatabaseQueue implements QueueInterface
         $this->pruneReserved();
 
         $now = time();
-        $tbl = $this->table;
+        $tbl = $this->tableSql;
 
         $row = $this->db->transaction(function (Connection $db) use ($queue, $now, $tbl): ?array {
             $driver    = $db->getDriverName();
@@ -177,7 +184,7 @@ final class DatabaseQueue implements QueueInterface
     {
         $this->ensureTable();
         return (int) $this->db->value(
-            "SELECT COUNT(*) FROM {$this->table}
+            "SELECT COUNT(*) FROM {$this->tableSql}
               WHERE queue = ? AND available_at <= ? AND reserved_at IS NULL AND failed_at IS NULL",
             [$queue, time()],
         );
@@ -187,7 +194,7 @@ final class DatabaseQueue implements QueueInterface
     public function clear(string $queue = 'default'): void
     {
         $this->ensureTable();
-        $this->db->execute("DELETE FROM {$this->table} WHERE queue = ?", [$queue]);
+        $this->db->execute("DELETE FROM {$this->tableSql} WHERE queue = ?", [$queue]);
     }
 
     // -----------------------------------------------------------------
@@ -197,14 +204,14 @@ final class DatabaseQueue implements QueueInterface
     /** Delete the row after successful processing. */
     public function acknowledge(int $rowId): void
     {
-        $this->db->execute("DELETE FROM {$this->table} WHERE id = ?", [$rowId]);
+        $this->db->execute("DELETE FROM {$this->tableSql} WHERE id = ?", [$rowId]);
     }
 
     /** Permanently mark a row as failed, storing the exception message. */
     public function markFailed(int $rowId, \Throwable $e): void
     {
         $this->db->execute(
-            "UPDATE {$this->table} SET failed_at = ?, reserved_at = NULL, error = ? WHERE id = ?",
+            "UPDATE {$this->tableSql} SET failed_at = ?, reserved_at = NULL, error = ? WHERE id = ?",
             [time(), substr($e->getMessage(), 0, 65535), $rowId],
         );
     }
@@ -222,7 +229,7 @@ final class DatabaseQueue implements QueueInterface
     {
         $this->ensureTable();
         return $this->db->select(
-            "SELECT * FROM {$this->table} WHERE queue = ? AND failed_at IS NOT NULL ORDER BY failed_at DESC",
+            "SELECT * FROM {$this->tableSql} WHERE queue = ? AND failed_at IS NOT NULL ORDER BY failed_at DESC",
             [$queue],
         );
     }
@@ -232,7 +239,7 @@ final class DatabaseQueue implements QueueInterface
     {
         $this->ensureTable();
         return (int) $this->db->value(
-            "SELECT COUNT(*) FROM {$this->table} WHERE queue = ? AND failed_at IS NOT NULL",
+            "SELECT COUNT(*) FROM {$this->tableSql} WHERE queue = ? AND failed_at IS NOT NULL",
             [$queue],
         );
     }
@@ -246,7 +253,7 @@ final class DatabaseQueue implements QueueInterface
     public function retry(int $rowId): void
     {
         $this->db->execute(
-            "UPDATE {$this->table}
+            "UPDATE {$this->tableSql}
                SET failed_at = NULL, reserved_at = NULL, attempts = 0, available_at = ?, error = NULL
              WHERE id = ?",
             [time(), $rowId],
@@ -262,7 +269,7 @@ final class DatabaseQueue implements QueueInterface
     {
         $this->ensureTable();
         return $this->db->execute(
-            "UPDATE {$this->table}
+            "UPDATE {$this->tableSql}
                SET failed_at = NULL, reserved_at = NULL, attempts = 0, available_at = ?, error = NULL
              WHERE queue = ? AND failed_at IS NOT NULL",
             [time(), $queue],
@@ -274,7 +281,7 @@ final class DatabaseQueue implements QueueInterface
     {
         $this->ensureTable();
         $this->db->execute(
-            "DELETE FROM {$this->table} WHERE queue = ? AND failed_at IS NOT NULL",
+            "DELETE FROM {$this->tableSql} WHERE queue = ? AND failed_at IS NOT NULL",
             [$queue],
         );
     }
@@ -297,7 +304,7 @@ final class DatabaseQueue implements QueueInterface
     {
         $deadline = time() - ($timeout ?? $this->reservedTimeout);
         return $this->db->execute(
-            "UPDATE {$this->table}
+            "UPDATE {$this->tableSql}
                SET reserved_at = NULL
              WHERE reserved_at IS NOT NULL AND reserved_at < ? AND failed_at IS NULL",
             [$deadline],
@@ -313,7 +320,7 @@ final class DatabaseQueue implements QueueInterface
     public function release(int $rowId, int $delay = 0): void
     {
         $this->db->execute(
-            "UPDATE {$this->table} SET reserved_at = NULL, available_at = ? WHERE id = ?",
+            "UPDATE {$this->tableSql} SET reserved_at = NULL, available_at = ? WHERE id = ?",
             [time() + $delay, $rowId],
         );
     }
@@ -341,15 +348,22 @@ final class DatabaseQueue implements QueueInterface
         $extra = $job instanceof HasDatabaseExtra ? $job->getDatabaseExtra() : [];
         $data  = array_merge($base, $extra);
 
-        $cols         = implode(', ', array_keys($data));
+        $cols         = implode(', ', array_map(fn(string $column): string => $this->db->getGrammar()->wrap($column), array_keys($data)));
         $placeholders = implode(', ', array_fill(0, count($data), '?'));
 
         $this->db->execute(
-            "INSERT INTO {$this->table} ({$cols}) VALUES ({$placeholders})",
+            "INSERT INTO {$this->tableSql} ({$cols}) VALUES ({$placeholders})",
             array_values($data),
         );
 
         return $id;
+    }
+
+    private function assertIdentifier(string $value, string $label): void
+    {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $value)) {
+            throw new \InvalidArgumentException("Invalid {$label} identifier: [{$value}]");
+        }
     }
 
     private function ensureTable(): void

@@ -9,8 +9,9 @@ use Lift\Redis\RedisClientInterface;
 /**
  * Cache implementation backed by Redis via {@see RedisClientInterface}.
  *
- * Values are serialised with {@see serialize()} so any PHP value (objects,
- * arrays, booleans) can be stored safely.
+ * Values are serialised with {@see serialize()} so arrays and scalar values round-trip
+ * without loss. Object deserialisation is disabled by default; pass an explicit
+ * `$allowedClasses` allow-list only when you intentionally cache trusted objects.
  *
  * When a non-empty `$secret` is provided, every stored value is wrapped in an
  * HMAC-signed envelope. This prevents an attacker who can write to Redis from
@@ -24,10 +25,14 @@ use Lift\Redis\RedisClientInterface;
  */
 final class RedisCache implements CacheInterface
 {
+    /**
+     * @param bool|list<class-string> $allowedClasses Classes allowed during unserialize(); false disables objects.
+     */
     public function __construct(
         private readonly RedisClientInterface $redis,
         private readonly string $prefix = 'lift:cache:',
         private readonly string $secret = '',
+        private readonly bool|array $allowedClasses = false,
     ) {}
 
     /** {@inheritdoc} */
@@ -41,7 +46,7 @@ final class RedisCache implements CacheInterface
         if ($payload === null) {
             return $default;
         }
-        return unserialize($payload);
+        return unserialize($payload, ['allowed_classes' => $this->allowedClasses]);
     }
 
     /** {@inheritdoc} */

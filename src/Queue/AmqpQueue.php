@@ -27,6 +27,7 @@ namespace Lift\Queue;
  *     'user'     => 'guest',
  *     'password' => 'guest',
  *     'vhost'    => '/',
+ *     'secret'   => $_ENV['QUEUE_SECRET'],
  * ]);
  *
  * $queue->push(new SendEmailJob($userId));
@@ -53,16 +54,19 @@ final class AmqpQueue implements QueueInterface
     private array $declared = [];
 
     private readonly string $secret;
+    private readonly bool $allowUnsignedPayloads;
 
     /**
      * @param array<string, mixed> $config
      *   Required keys: host, port, user, password, vhost.
      *   Optional:      exchange (default: ''), prefetch (default: 1),
-     *                  secret (default: '') — HMAC signing key for payloads.
+     *                  secret (default: '') — HMAC signing key for payloads,
+     *                  allow_unsigned_payloads (default: false) — legacy/local only.
      */
     public function __construct(array $config = [])
     {
         $this->secret = (string) ($config['secret'] ?? '');
+        $this->allowUnsignedPayloads = (bool) ($config['allow_unsigned_payloads'] ?? false);
         $this->config = array_merge([
             'host'     => 'localhost',
             'port'     => 5672,

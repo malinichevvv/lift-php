@@ -16,6 +16,7 @@ use Lift\Debug\DebugToolbarRenderer;
 use Lift\Debug\ErrorHandler;
 use Lift\Events\EventDispatcher;
 use Lift\Exception\HttpException;
+use Lift\Exception\MethodNotAllowedException;
 use Lift\Http\SseResponse;
 use Lift\Http\StringStream;
 use Lift\Http\Request;
@@ -377,7 +378,7 @@ final class App
      * Replace the default {@see SyncQueue} with a custom queue driver.
      *
      * ```php
-     * $app->setQueue(new RedisQueue(new RedisClient()));
+     * $app->setQueue(new RedisQueue(new RedisClient(), secret: $_ENV['QUEUE_SECRET']));
      * ```
      */
     public function setQueue(QueueInterface $queue): self
@@ -626,6 +627,15 @@ final class App
             $response = Response::json(['error' => $e->getMessage()], 429);
             if ($e->retryAfter !== null) {
                 $response = $response->withHeader('Retry-After', (string) $e->retryAfter);
+            }
+            return $response;
+        }
+
+        if ($e instanceof MethodNotAllowedException) {
+            $response = Response::json(['error' => $e->getMessage()], 405);
+            $allowed = $e->getAllowedMethods();
+            if ($allowed !== []) {
+                $response = $response->withHeader('Allow', implode(', ', $allowed));
             }
             return $response;
         }

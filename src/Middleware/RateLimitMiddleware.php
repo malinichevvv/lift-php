@@ -27,7 +27,7 @@ use Psr\Http\Server\RequestHandlerInterface;
  *
  * // Production: shared Redis counter
  * $app->use(new RateLimitMiddleware(
- *     store: new RedisCache(new RedisClient()),
+ *     store: new RedisCache(new RedisClient(), secret: $_ENV['CACHE_HMAC_SECRET']),
  *     maxRequests: 100,
  *     windowSeconds: 60,
  *     keyResolver: fn(Request $req) => $req->getAttribute('user_id') ?? $req->getServerParams()['REMOTE_ADDR'],
