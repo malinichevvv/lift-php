@@ -55,6 +55,9 @@ final class Router
      */
     private ?array $namedRoutes = null;
 
+    /** @var callable(Route, Request): void|null */
+    private $routeMatched = null;
+
     /**
      * Per-process reflection cache for route handlers.
      * Key format: "ClassName::method" or closure identity.
@@ -87,6 +90,7 @@ final class Router
                 $this->staticPathMethods[$normalised][] = $m;
             }
         } else {
+            $route->compile();
             $this->routes[] = $route;
         }
 
@@ -98,6 +102,13 @@ final class Router
     public function group(string $prefix, callable $callback): RouteGroup
     {
         return new RouteGroup($prefix, $this, $callback);
+    }
+
+    /** Register a callback fired after a route matches and before middleware runs. */
+    public function onRouteMatched(callable $callback): self
+    {
+        $this->routeMatched = $callback;
+        return $this;
     }
 
     // -----------------------------------------------------------------
@@ -128,6 +139,7 @@ final class Router
         $dynamic = [];
 
         foreach ($this->getRoutes() as $route) {
+            $route->compile();
             $data = $route->toCacheable();
             if ($data === null) {
                 continue;
@@ -293,6 +305,9 @@ final class Router
         // O(1) static fast-path — no regex needed for exact-path routes.
         if (isset($this->static[$method][$path])) {
             $route = $this->static[$method][$path];
+            if ($this->routeMatched !== null) {
+                ($this->routeMatched)($route, $request);
+            }
             // Static routes have no params — skip the Request clone withRouteParams([]).
             return $this->runThroughPipeline($route, $request, $globalMiddleware);
         }
@@ -323,6 +338,9 @@ final class Router
 
         [$route, $params] = $matched;
         $request = $request->withRouteParams($params);
+        if ($this->routeMatched !== null) {
+            ($this->routeMatched)($route, $request);
+        }
 
         return $this->runThroughPipeline($route, $request, $globalMiddleware);
     }

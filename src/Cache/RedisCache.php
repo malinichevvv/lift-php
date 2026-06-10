@@ -79,6 +79,17 @@ final class RedisCache implements CacheInterface
         return $this->redis->incrBy($this->prefix . $key, $by);
     }
 
+    /**
+     * Set a TTL on a raw counter key created by increment().
+     *
+     * Counters are intentionally stored as plain Redis integers instead of the
+     * serialised/HMAC cache envelope so Redis can apply INCR atomically.
+     */
+    public function expire(string $key, int $ttl): bool
+    {
+        return $this->redis->expire($this->prefix . $key, $ttl);
+    }
+
     /** {@inheritdoc} */
     public function remember(string $key, int $ttl, callable $factory): mixed
     {

@@ -137,6 +137,14 @@ final class Jwt
 
         [$headerB64, $bodyB64, $sigB64] = $parts;
 
+        $header = $this->decode64($headerB64);
+        if (!is_array($header)) {
+            throw new JwtException('Token header is not a JSON object.');
+        }
+        if (($header['alg'] ?? null) !== $this->algo->value) {
+            throw new JwtException('Token algorithm header does not match the configured verifier.');
+        }
+
         // 1. Verify signature
         $message = "{$headerB64}.{$bodyB64}";
         $valid = $this->algo->isHmac()
@@ -266,6 +274,10 @@ final class Jwt
         if ($decoded === false) {
             throw new JwtException('Invalid base64url segment in token.');
         }
-        return json_decode($decoded, true, flags: JSON_THROW_ON_ERROR);
+        try {
+            return json_decode($decoded, true, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new JwtException('Invalid JSON segment in token.', previous: $e);
+        }
     }
 }

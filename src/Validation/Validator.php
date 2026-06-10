@@ -6,6 +6,7 @@ namespace Lift\Validation;
 
 use Closure;
 use Lift\Translation\Translator;
+use Psr\Http\Message\UploadedFileInterface;
 
 /**
  * Rule-based input validator.
@@ -270,14 +271,9 @@ final class Validator
     private function validate(): void
     {
         foreach ($this->rules as $field => $ruleSet) {
-            if (str_ends_with($field, '.*')) {
-                $parent = substr($field, 0, -2);
-                $values = $this->getValue($parent);
-                if (!is_array($values)) {
-                    continue;
-                }
-                foreach ($values as $i => $item) {
-                    $this->validateField("{$parent}.{$i}", $item, $ruleSet);
+            if (str_contains((string) $field, '*')) {
+                foreach ($this->expandWildcardFields((string) $field) as $expandedField => $expandedValue) {
+                    $this->validateField($expandedField, $expandedValue, $ruleSet);
                 }
                 continue;
             }
@@ -402,6 +398,8 @@ final class Validator
             'ipv6'                => filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false,
             'alpha'               => is_string($value) && ctype_alpha($value),
             'alpha_num'           => is_string($value) && ctype_alnum($value),
+            'alpha_dash'          => is_string($value) && preg_match('/^[A-Za-z0-9_-]+$/', $value) === 1,
+            'slug'                => is_string($value) && preg_match('/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/', $value) === 1,
             'digits'              => is_string($value) && ctype_digit($value),
             'digits_between'      => $this->validateDigitsBetween($value, (int) ($params[0] ?? 0), (int) ($params[1] ?? PHP_INT_MAX)),
             'date'                => $this->isValidDate($value),
@@ -409,6 +407,17 @@ final class Validator
             'json'                => is_string($value) && $this->isValidJson($value),
             'uuid'                => is_string($value) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $value) === 1,
             'mac_address'         => is_string($value) && preg_match('/^([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$/', $value) === 1,
+            'domain', 'domain_name'=> is_string($value) && filter_var($value, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false,
+            'port', 'port_number'  => filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65535]]) !== false,
+            'timezone'            => is_string($value) && in_array($value, timezone_identifiers_list(), true),
+            'language_code'        => is_string($value) && preg_match('/^[a-z]{2,3}(?:-[A-Z]{2})?$/', $value) === 1,
+            'country_code'         => is_string($value) && preg_match('/^[A-Z]{2}$/', $value) === 1,
+            'currency_code'        => is_string($value) && preg_match('/^[A-Z]{3}$/', $value) === 1,
+            'latitude'             => is_numeric($value) && (float) $value >= -90 && (float) $value <= 90,
+            'longitude'            => is_numeric($value) && (float) $value >= -180 && (float) $value <= 180,
+            'hex_color'            => is_string($value) && preg_match('/^#?(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/', $value) === 1,
+            'base64'               => is_string($value) && base64_decode($value, true) !== false,
+            'strong_password'      => is_string($value) && preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/', $value) === 1,
             'regex'               => is_string($value) && $this->pregMatch($params[0] ?? '//', $value) === 1,
             'not_regex'           => is_string($value) && $this->pregMatch($params[0] ?? '//', $value) === 0,
             'lowercase'           => is_string($value) && $value === mb_strtolower($value),
@@ -435,6 +444,9 @@ final class Validator
             'distinct'            => is_array($value) && count($value) === count(array_unique(array_map('serialize', $value))),
             'min_items'           => is_array($value) && count($value) >= (int) ($params[0] ?? 0),
             'max_items'           => is_array($value) && count($value) <= (int) ($params[0] ?? 0),
+            'file'                => $value instanceof UploadedFileInterface && $value->getError() === UPLOAD_ERR_OK,
+            'mimes'               => $this->validateMimes($value, $params),
+            'max_file_size'       => $this->validateMaxFileSize($value, (int) ($params[0] ?? 0)),
             default               => true,
         };
 
@@ -655,6 +667,8 @@ final class Validator
             'ipv6'              => "The {$label} must be a valid IPv6 address.",
             'alpha'             => "The {$label} may only contain letters.",
             'alpha_num'         => "The {$label} may only contain letters and numbers.",
+            'alpha_dash'        => "The {$label} may only contain letters, numbers, dashes, and underscores.",
+            'slug'              => "The {$label} must be a valid URL slug.",
             'digits'            => "The {$label} must be numeric digits only.",
             'digits_between'    => "The {$label} must be between {$p0} and {$p1} digits.",
             'date'              => "The {$label} must be a valid date.",
@@ -662,6 +676,17 @@ final class Validator
             'json'              => "The {$label} must be valid JSON.",
             'uuid'              => "The {$label} must be a valid UUID.",
             'mac_address'       => "The {$label} must be a valid MAC address.",
+            'domain', 'domain_name' => "The {$label} must be a valid domain name.",
+            'port', 'port_number'=> "The {$label} must be a valid port number.",
+            'timezone'          => "The {$label} must be a valid timezone.",
+            'language_code'     => "The {$label} must be a valid language code.",
+            'country_code'      => "The {$label} must be a valid country code.",
+            'currency_code'     => "The {$label} must be a valid currency code.",
+            'latitude'          => "The {$label} must be a valid latitude.",
+            'longitude'         => "The {$label} must be a valid longitude.",
+            'hex_color'         => "The {$label} must be a valid hex color.",
+            'base64'            => "The {$label} must be valid base64 data.",
+            'strong_password'   => "The {$label} must contain upper and lower case letters, a number, and a symbol.",
             'regex', 'not_regex'=> "The {$label} format is invalid.",
             'lowercase'         => "The {$label} must be lowercase.",
             'uppercase'         => "The {$label} must be uppercase.",
@@ -687,6 +712,9 @@ final class Validator
             'distinct'          => "The {$label} field has a duplicate value.",
             'min_items'         => "The {$label} must have at least {$n} " . ($n === 1 ? 'item' : 'items') . '.',
             'max_items'         => "The {$label} must not have more than {$n} " . ($n === 1 ? 'item' : 'items') . '.',
+            'file'              => "The {$label} must be a valid uploaded file.",
+            'mimes'             => "The {$label} must be a file of type: " . implode(', ', $params) . '.',
+            'max_file_size'     => "The {$label} must not be larger than {$p0} kilobytes.",
             default             => "The {$label} is invalid.",
         };
     }
@@ -694,6 +722,47 @@ final class Validator
     // -----------------------------------------------------------------
     // Rule helpers
     // -----------------------------------------------------------------
+
+
+    /**
+     * Expand wildcard field patterns such as items.*.name to concrete paths.
+     *
+     * @return array<string, mixed>
+     */
+    private function expandWildcardFields(string $pattern): array
+    {
+        $results = [];
+        $this->expandWildcardRecursive(explode('.', $pattern), $this->data, '', $results);
+        return $results;
+    }
+
+    /** @param array<string, mixed> $results */
+    private function expandWildcardRecursive(array $parts, mixed $cursor, string $prefix, array &$results): void
+    {
+        if ($parts === []) {
+            $results[$prefix] = $cursor;
+            return;
+        }
+
+        $part = array_shift($parts);
+        if ($part === '*') {
+            if (!is_array($cursor)) {
+                return;
+            }
+            foreach ($cursor as $key => $value) {
+                $path = $prefix === '' ? (string) $key : $prefix . '.' . (string) $key;
+                $this->expandWildcardRecursive($parts, $value, $path, $results);
+            }
+            return;
+        }
+
+        if (!is_array($cursor) || !array_key_exists((string) $part, $cursor)) {
+            return;
+        }
+
+        $path = $prefix === '' ? (string) $part : $prefix . '.' . (string) $part;
+        $this->expandWildcardRecursive($parts, $cursor[$part], $path, $results);
+    }
 
     private function validateMin(mixed $value, float $min): bool
     {
@@ -758,6 +827,29 @@ final class Validator
     {
         json_decode($value);
         return json_last_error() === JSON_ERROR_NONE;
+    }
+
+    /** @param list<string> $extensions */
+    private function validateMimes(mixed $value, array $extensions): bool
+    {
+        if (!$value instanceof UploadedFileInterface || $value->getError() !== UPLOAD_ERR_OK) {
+            return false;
+        }
+        $name = $value->getClientFilename();
+        if ($name === null || $extensions === []) {
+            return false;
+        }
+        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        return in_array($ext, array_map('strtolower', $extensions), true);
+    }
+
+    private function validateMaxFileSize(mixed $value, int $kilobytes): bool
+    {
+        if (!$value instanceof UploadedFileInterface || $value->getError() !== UPLOAD_ERR_OK) {
+            return false;
+        }
+        $size = $value->getSize();
+        return $size !== null && $size <= $kilobytes * 1024;
     }
 
     private function parseRule(string $rule): array

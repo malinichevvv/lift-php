@@ -117,3 +117,6 @@ Lift **имеет своё мнение о том, что включать** (о
 MIT. Создан и поддерживается сообществом.
 
 [Начать →](installation)
+
+
+1. **[Lift 1.4: заметки к релизу](release-1.4)** — security fixes, filter pipeline, lifecycle hooks, route cache CLI.

@@ -26,12 +26,14 @@ if (!$loaded) {
 use Lift\Console\Application;
 use Lift\Console\Commands\KeyGenerateCommand;
 use Lift\Console\Commands\ListRoutesCommand;
+use Lift\Console\Commands\RouteCacheCommand;
+use Lift\Console\Commands\RouteClearCommand;
 use Lift\Console\Commands\MakeCommand;
 use Lift\Console\Commands\MakeMigrationCommand;
 use Lift\Console\Commands\ReplCommand;
 use Lift\Console\Commands\ServeCommand;
 
-$cli = new Application('lift', '1.3.0');
+$cli = new Application('lift', '1.4.0');
 $cli->register(new ServeCommand());
 
 // make:* scaffolding — no dependencies, available everywhere
@@ -50,6 +52,9 @@ $cli->register(new MakeMigrationCommand());
 $cli->register(new KeyGenerateCommand());
 $cli->register(new ReplCommand());
 $cli->register(new ListRoutesCommand());
+$cli->register(new ListRoutesCommand(name: 'route:list'));
+$cli->register(new RouteCacheCommand());
+$cli->register(new RouteClearCommand());
 
 // If the project has a lift.php bootstrap, load it so app-specific commands are registered.
 $bootstrap = getcwd() . '/lift.php';

@@ -117,3 +117,6 @@ Everything after that is *additive* — read what you need.
 MIT. Built and maintained by the community.
 
 [Get started →](installation)
+
+
+1. **[Lift 1.4 Release Notes](release-1.4)** — security fixes, filter pipeline, lifecycle hooks, route cache CLI.

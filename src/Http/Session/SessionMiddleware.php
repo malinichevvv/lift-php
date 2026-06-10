@@ -11,47 +11,68 @@ use Psr\Http\Server\RequestHandlerInterface;
 
 /**
  * Starts a driver-backed session, exposes it as a request attribute, and
- * writes the `Set-Cookie` header on every response so the browser always
+ * writes the Set-Cookie header on every response so the browser always
  * holds the correct session ID.
  *
- * The session is available inside handlers via the request attribute (default `"session"`):
- * ```php
- * $session = $request->getAttribute('session'); // Session instance
- * ```
+ * The session is available inside handlers via the request attribute.
  *
  * The middleware:
  * 1. Starts the session (hydrates from the backing store).
- * 2. Attaches the `Session` as a request attribute.
- * 3. Calls `ageFlashData()` then `save()` in a `finally` block so the session
+ * 2. Attaches the Session as a request attribute.
+ * 3. Calls ageFlashData() then save() in a finally block so the session
  *    is always persisted even when the handler throws.
- * 4. Appends the `Set-Cookie` header to the response.
+ * 4. Appends the Set-Cookie header to the response.
  */
 class SessionMiddleware implements MiddlewareInterface
 {
+    /**
+     * @param Session|callable(ServerRequestInterface):Session $session
+     *   Session prototype or factory. A fresh request-scoped Session is used for
+     *   every request so long-running workers never share mutable session state.
+     */
     public function __construct(
-        private readonly Session $session,
+        private readonly mixed $session,
         private readonly string $attribute = 'session',
     ) {}
 
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
-        // Read the session ID from this request's cookies rather than the
+        $session = $this->makeSession($request);
+
+        // Read the session ID from this request cookies rather than the
         // $_COOKIE superglobal, which is not populated under persistent
         // runtimes (RoadRunner, Swoole).
-        $cookie = $request->getCookieParams()[$this->session->cookieName()] ?? null;
+        $cookie = $request->getCookieParams()[$session->cookieName()] ?? null;
         if (is_string($cookie) && $cookie !== '') {
-            $this->session->setIdFromCookie($cookie);
+            $session->setIdFromCookie($cookie);
         }
 
-        $this->session->start();
+        $session->start();
         try {
-            $response = $handler->handle($request->withAttribute($this->attribute, $this->session));
+            $response = $handler->handle($request->withAttribute($this->attribute, $session));
         } finally {
-            $this->session->ageFlashData();
-            $this->session->save();
+            $session->ageFlashData();
+            $session->save();
         }
 
         $secure = strtolower($request->getUri()->getScheme()) === 'https';
-        return $response->withAddedHeader('Set-Cookie', $this->session->toCookieHeader($secure));
+        return $response->withAddedHeader('Set-Cookie', $session->toCookieHeader($secure));
+    }
+
+    private function makeSession(ServerRequestInterface $request): Session
+    {
+        if (is_callable($this->session)) {
+            $session = ($this->session)($request);
+            if (!$session instanceof Session) {
+                throw new \RuntimeException('Session factory must return a Session instance.');
+            }
+            return $session;
+        }
+
+        if (!$this->session instanceof Session) {
+            throw new \RuntimeException('SessionMiddleware requires a Session instance or factory.');
+        }
+
+        return $this->session->newRequestSession();
     }
 }

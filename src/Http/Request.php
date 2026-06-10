@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Lift\Http;
 
+use Lift\Exception\PayloadTooLargeException;
 use Lift\Translation\Translator;
+use Lift\Validation\FilteredInput;
 use Lift\Validation\ValidationException;
 use Lift\Validation\Validator;
 use Psr\Http\Message\ServerRequestInterface;
@@ -14,6 +16,8 @@ use Psr\Http\Message\UploadedFileInterface;
 
 final class Request extends Message implements ServerRequestInterface
 {
+    private static ?int $maxJsonBodyBytes = 1048576;
+
     private array $attributes = [];
     private array $routeParams = [];
 
@@ -36,6 +40,23 @@ final class Request extends Message implements ServerRequestInterface
         $this->body = $body ?? new StringStream('');
     }
 
+    /**
+     * Configure the maximum JSON request body size accepted by fromGlobals().
+     *
+     * Pass null to disable the framework-level limit. The default is 1 MiB,
+     * which protects JSON APIs and JSON-RPC endpoints from accidental large
+     * in-memory reads while remaining generous for normal payloads.
+     */
+    public static function setMaxJsonBodyBytes(?int $bytes): void
+    {
+        self::$maxJsonBodyBytes = $bytes === null ? null : max(0, $bytes);
+    }
+
+    public static function maxJsonBodyBytes(): ?int
+    {
+        return self::$maxJsonBodyBytes;
+    }
+
     public static function fromGlobals(): self
     {
         $method  = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
@@ -48,7 +69,14 @@ final class Request extends Message implements ServerRequestInterface
         if (in_array($method, ['POST', 'PUT', 'PATCH'], true)) {
             $ct = $_SERVER['CONTENT_TYPE'] ?? '';
             if (str_contains($ct, 'application/json')) {
+                $length = isset($_SERVER['CONTENT_LENGTH']) ? (int) $_SERVER['CONTENT_LENGTH'] : 0;
+                if (self::$maxJsonBodyBytes !== null && $length > self::$maxJsonBodyBytes) {
+                    throw new PayloadTooLargeException('JSON request body exceeds the configured limit.');
+                }
                 $raw        = (string) Stream::fromInput();
+                if (self::$maxJsonBodyBytes !== null && strlen($raw) > self::$maxJsonBodyBytes) {
+                    throw new PayloadTooLargeException('JSON request body exceeds the configured limit.');
+                }
                 $parsedBody = json_decode($raw, true) ?? [];
                 $body       = new StringStream($raw);
             } else {
@@ -195,13 +223,29 @@ final class Request extends Message implements ServerRequestInterface
      */
     public function validate(array $rules, array $messages = [], ?Translator $translator = null): array
     {
-        $data = array_merge(
+        return $this->inputData()->validate($rules, $messages, $translator);
+    }
+
+    /**
+     * Filter request input before validation.
+     *
+     * Filters are lightweight input transformations/casts. They are not a
+     * replacement for escaping HTML on output or binding SQL parameters.
+     *
+     * @param array<string, string|array> $filters
+     */
+    public function filter(array $filters): FilteredInput
+    {
+        return FilteredInput::from($this->inputData()->all(), $filters);
+    }
+
+    private function inputData(): FilteredInput
+    {
+        return new FilteredInput(array_merge(
             $this->queryParams,
             $this->parsedBody,
             $this->routeParams,
-        );
-
-        return (new Validator($data, $rules, $messages, $translator))->validated();
+        ));
     }
 
     /** @internal Used by the router to inject matched route params */

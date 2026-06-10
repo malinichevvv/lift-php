@@ -68,6 +68,9 @@ final class App
     private ?DebugCollector $debugCollector = null;
     private ?ErrorHandler $debugErrorHandler = null;
 
+    /** @var array<string, list<callable>> */
+    private array $lifecycleListeners = [];
+
     /**
      * @param Container|null $container Custom DI container. Defaults to a fresh {@see Container}.
      */
@@ -75,6 +78,9 @@ final class App
     {
         $this->container = $container ?? new Container();
         $this->router    = new Router($this->container);
+        $this->router->onRouteMatched(function (Route $route, Request $request): void {
+            $this->dispatchLifecycle('route.matched', $route, $request);
+        });
         $this->config    = new Config();
 
         // Register core singletons so they can be injected anywhere
@@ -293,6 +299,42 @@ final class App
         return $this->container->make($abstract, $overrides);
     }
 
+    /**
+     * Register a lightweight lifecycle listener.
+     *
+     * Built-in events: request.received, route.matched, response.sending.
+     */
+    public function on(string $event, callable $listener): self
+    {
+        $this->lifecycleListeners[$event][] = $listener;
+        return $this;
+    }
+
+    /**
+     * Run config/bootstrap steps in order.
+     *
+     * Each step may be an invokable object, a callable, a class with bootstrap(App),
+     * or a class resolved from the container and then invoked.
+     *
+     * @param list<class-string|callable|object> $steps
+     */
+    public function bootstrap(array $steps): self
+    {
+        foreach ($steps as $step) {
+            $instance = is_string($step) && class_exists($step) ? $this->container->make($step) : $step;
+            if (is_object($instance) && method_exists($instance, 'bootstrap')) {
+                $instance->bootstrap($this);
+                continue;
+            }
+            if (is_callable($instance)) {
+                $instance($this);
+                continue;
+            }
+            throw new \InvalidArgumentException('Bootstrap step must be callable or expose bootstrap(App).');
+        }
+        return $this;
+    }
+
     /** Return the underlying DI container. */
     public function container(): Container
     {
@@ -499,6 +541,7 @@ final class App
     public function run(?Request $request = null): void
     {
         $request ??= Request::fromGlobals();
+        $this->dispatchLifecycle('request.received', $request);
 
         try {
             $response = $this->router->dispatch($request, $this->middleware);
@@ -506,6 +549,7 @@ final class App
             $response = $this->handleError($e, $request);
         }
 
+        $this->dispatchLifecycle('response.sending', $response, $request);
         $this->emit($response);
     }
 
@@ -521,8 +565,9 @@ final class App
     public function handle(Request $request): Response
     {
         $pipeline = new Pipeline($this->container);
+        $this->dispatchLifecycle('request.received', $request);
         try {
-            return $pipeline->run(
+            $response = $pipeline->run(
                 $request,
                 $this->middleware,
                 function (ServerRequestInterface $req): Response {
@@ -534,8 +579,12 @@ final class App
                     return $this->router->dispatch($r, []);
                 },
             );
+            $this->dispatchLifecycle('response.sending', $response, $request);
+            return $response;
         } catch (\Throwable $e) {
-            return $this->handleError($e, $request);
+            $response = $this->handleError($e, $request);
+            $this->dispatchLifecycle('response.sending', $response, $request);
+            return $response;
         }
     }
 
@@ -608,6 +657,13 @@ final class App
     // -----------------------------------------------------------------
     // Error handling (internal)
     // -----------------------------------------------------------------
+
+    private function dispatchLifecycle(string $event, mixed ...$payload): void
+    {
+        foreach ($this->lifecycleListeners[$event] ?? [] as $listener) {
+            $listener(...$payload);
+        }
+    }
 
     private function handleError(\Throwable $e, Request $request): Response
     {

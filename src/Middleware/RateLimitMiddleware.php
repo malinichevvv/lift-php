@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lift\Middleware;
 
 use Lift\Cache\CacheInterface;
+use Lift\Cache\RedisCache;
 use Lift\Http\Response;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -61,7 +62,11 @@ final class RateLimitMiddleware implements MiddlewareInterface
 
         // First hit in this window — set TTL
         if ($current === 1) {
-            $this->store->set($key, 1, $this->windowSeconds);
+            if ($this->store instanceof RedisCache) {
+                $this->store->expire($key, $this->windowSeconds);
+            } else {
+                $this->store->set($key, 1, $this->windowSeconds);
+            }
         }
 
         $remaining = max(0, $this->maxRequests - $current);

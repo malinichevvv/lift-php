@@ -5,6 +5,30 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-06-10
+
+### Security
+- JWT verification now validates the token header and rejects tokens whose `alg` does not match the configured verifier.
+- `Request::fromGlobals()` enforces a configurable JSON body limit and throws `PayloadTooLargeException` (HTTP 413) for oversized JSON payloads.
+- Session middleware now uses request-scoped session instances, preventing mutable session state from leaking between requests in persistent runtimes.
+
+### Added
+- `Request::filter()` and `Validation\FilteredInput` for lightweight input filters/casts before validation.
+- New validation rules: `alpha_dash`, `slug`, `domain`, `port`, `timezone`, `language_code`, `country_code`, `currency_code`, `latitude`, `longitude`, `hex_color`, `base64`, `strong_password`, `file`, `mimes`, and `max_file_size`.
+- Nested wildcard validation for paths such as `items.*.name`.
+- Lightweight lifecycle hooks: `request.received`, `route.matched`, and `response.sending`.
+- `App::bootstrap()` for ordered callable/invokable/bootstrap-step application setup.
+- `lift route:cache`, `lift route:clear`, and `lift route:list --json`; `routes:list` remains available.
+- Configurable session cookie attributes: `path`, `domain`, `sameSite`, `secure`, `httpOnly`, and `partitioned`.
+
+### Fixed
+- Redis-backed rate limiting now keeps counters as raw Redis integers and sets TTL via `RedisCache::expire()`, preserving atomic `INCRBY` behaviour.
+- Dynamic route patterns are compiled and validated when registered or cached, surfacing invalid regex constraints before traffic reaches them.
+
+### Changed
+- The bundled `lift` CLI version was bumped to `1.4.0`.
+- Documentation in English, Russian, and Ukrainian now covers the new release features and production debug guidance.
+
 ## [1.3.0] — 2026-05-25
 
 ### Security

@@ -24,14 +24,17 @@ use Lift\Routing\Router;
  */
 final class ListRoutesCommand extends Command
 {
-    public function __construct(private readonly ?Router $router = null) {}
+    public function __construct(
+        private readonly ?Router $router = null,
+        private readonly string $name = 'routes:list',
+    ) {}
 
-    public function getName(): string        { return 'routes:list'; }
+    public function getName(): string        { return $this->name; }
     public function getDescription(): string { return 'List all registered routes'; }
 
     public function getHelp(): string
     {
-        return 'Usage: lift routes:list [--bootstrap=path/to/app.php]' . PHP_EOL
+        return 'Usage: lift routes:list [--json] [--bootstrap=path/to/app.php]' . PHP_EOL
             . '  Boots the project app (bootstrap/app.php, app/bootstrap.php or app.php)'
             . ' and prints every registered route.';
     }
@@ -47,7 +50,11 @@ final class ListRoutesCommand extends Command
         $routes = $router->getRoutes();
 
         if (empty($routes)) {
-            $output->warn('No routes registered.');
+            if ($input->hasOption('json')) {
+                $output->writeln('[]');
+            } else {
+                $output->warn('No routes registered.');
+            }
             return 0;
         }
 
@@ -62,6 +69,17 @@ final class ListRoutesCommand extends Command
                     $route->getMiddleware(),
                 )),
             ];
+        }
+
+        if ($input->hasOption('json')) {
+            $jsonRows = array_map(static fn(array $row): array => [
+                'methods' => explode('|', $row['Methods']),
+                'path' => $row['Path'],
+                'name' => $row['Name'] !== '' ? $row['Name'] : null,
+                'middleware' => $row['Middleware'] !== '' ? array_map('trim', explode(',', $row['Middleware'])) : [],
+            ], $rows);
+            $output->writeln(json_encode($jsonRows, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+            return 0;
         }
 
         $output->table(['Methods', 'Path', 'Name', 'Middleware'], $rows);

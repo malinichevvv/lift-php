@@ -141,26 +141,30 @@ final class Route
         return $this->extractParams($path) !== false;
     }
 
+    /** Compile and validate the route pattern immediately. */
+    public function compile(): void
+    {
+        $this->ensureCompiled();
+    }
+
     /**
      * @return array<string,string>|false
      */
     private function extractParams(string $path): array|false
     {
-        if ($this->compiledPattern === null) {
-            $names   = [];
-            $pattern = preg_replace_callback(
-                '/\{(\w+)(?::([^}]+))?\}/',
-                static function (array $m) use (&$names): string {
-                    $names[] = $m[1];
-                    return '(?P<' . $m[1] . '>' . ($m[2] ?? '[^/]+') . ')';
-                },
-                $this->path,
-            );
-            $this->compiledPattern = '@^' . $pattern . '$@u';
-            $this->paramNames      = $names;
+        $this->ensureCompiled();
+
+        set_error_handler(static fn() => true);
+        try {
+            $matched = preg_match($this->compiledPattern ?? '', $path, $matches);
+        } finally {
+            restore_error_handler();
         }
 
-        if (preg_match($this->compiledPattern, $path, $matches) !== 1) {
+        if ($matched !== 1) {
+            if ($matched === false) {
+                throw new \InvalidArgumentException('Invalid regex constraint in route path [' . $this->path . '].');
+            }
             return false;
         }
 
@@ -173,6 +177,43 @@ final class Route
             $params[$name] = $matches[$name];
         }
         return $params;
+    }
+
+    private function ensureCompiled(): void
+    {
+        if ($this->compiledPattern !== null) {
+            return;
+        }
+
+        $names = [];
+        $pattern = preg_replace_callback(
+            '/\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]+))?\}/',
+            static function (array $m) use (&$names): string {
+                $names[] = $m[1];
+                return '(?P<' . $m[1] . '>' . ($m[2] ?? '[^/]+') . ')';
+            },
+            $this->path,
+        );
+
+        if ($pattern === null || str_contains($pattern, '{') || str_contains($pattern, '}')) {
+            throw new \InvalidArgumentException(
+                'Invalid route path [' . $this->path . ']: parameters must be named like {id} or {id:\\d+}.'
+            );
+        }
+
+        $compiled = '@^' . $pattern . '$@u';
+        set_error_handler(static fn() => true);
+        try {
+            $ok = preg_match($compiled, '');
+        } finally {
+            restore_error_handler();
+        }
+        if ($ok === false) {
+            throw new \InvalidArgumentException('Invalid regex constraint in route path [' . $this->path . '].');
+        }
+
+        $this->compiledPattern = $compiled;
+        $this->paramNames = $names;
     }
 
     // -----------------------------------------------------------------

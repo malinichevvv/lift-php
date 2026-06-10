@@ -34,8 +34,14 @@ class Session
      * @param int                           $lifetime       Cookie and store TTL in seconds.
      * @param string                        $cookieName     Cookie name used to locate the session ID on incoming requests.
      * @param bool|string[]                 $allowedClasses Passed to `unserialize()` as `allowed_classes`.
-     *                                                      `true` = allow all (default, backward-compatible).
-     *                                                      `false` = no objects. Array = allowlist of class names.
+     *                                                      `true` = allow all. `false` = no objects.
+     *                                                      Array = allowlist of class names.
+     * @param string                         $cookiePath     Cookie Path attribute.
+     * @param string|null                    $cookieDomain   Cookie Domain attribute.
+     * @param string                         $sameSite       SameSite: Strict, Lax, or None.
+     * @param bool|null                      $secure         Force Secure flag; null lets middleware decide from HTTPS.
+     * @param bool                           $httpOnly       Emit HttpOnly flag.
+     * @param bool                           $partitioned    Emit Partitioned flag for CHIPS-compatible browsers.
      * @throws RandomException
      */
     public function __construct(
@@ -44,7 +50,21 @@ class Session
         private readonly int $lifetime = 7200,
         private readonly string $cookieName = 'lift_session',
         private readonly bool|array $allowedClasses = false,
+        private readonly string $cookiePath = '/',
+        private readonly ?string $cookieDomain = null,
+        private readonly string $sameSite = 'Lax',
+        private readonly ?bool $secure = null,
+        private readonly bool $httpOnly = true,
+        private readonly bool $partitioned = false,
     ) {
+        if (!in_array($this->sameSite, ['Strict', 'Lax', 'None'], true)) {
+            throw new \InvalidArgumentException('Session SameSite must be one of Strict, Lax, or None');
+        }
+
+        if (($this->sameSite === 'None' || $this->partitioned) && $this->secure === false) {
+            throw new \InvalidArgumentException('SameSite=None and Partitioned session cookies require Secure.');
+        }
+
         if ($id !== null) {
             // Explicit ID supplied by application code — trusted.
             $this->id = $id;
@@ -74,6 +94,31 @@ class Session
         }
         $this->id           = $id;
         $this->idFromCookie = true;
+    }
+
+    /**
+     * Create an unstarted session for a new HTTP request using the same driver
+     * and cookie settings as this prototype.
+     *
+     * Persistent runtimes keep middleware objects alive across requests. Reusing
+     * a started Session object there would leak data and session IDs between
+     * clients, so SessionMiddleware forks a fresh request-scoped instance
+     * before reading cookies or hydrating data from the store.
+     */
+    public function newRequestSession(): self
+    {
+        return new self(
+            store: $this->store,
+            lifetime: $this->lifetime,
+            cookieName: $this->cookieName,
+            allowedClasses: $this->allowedClasses,
+            cookiePath: $this->cookiePath,
+            cookieDomain: $this->cookieDomain,
+            sameSite: $this->sameSite,
+            secure: $this->secure,
+            httpOnly: $this->httpOnly,
+            partitioned: $this->partitioned,
+        );
     }
 
     /**
@@ -253,19 +298,30 @@ class Session
      *
      * @param bool $secure Emit the `Secure` flag (set to `true` on HTTPS).
      */
-    public function toCookieHeader(bool $secure = false): string
+    public function toCookieHeader(?bool $secure = null): string
     {
         $value = urlencode($this->id);
+        $effectiveSecure = $this->secure ?? ($secure ?? false);
         $parts = [
             "{$this->cookieName}={$value}",
-            'Path=/',
-            'HttpOnly',
-            'SameSite=Lax',
+            'Path=' . $this->cookiePath,
+            'SameSite=' . $this->sameSite,
             "Max-Age={$this->lifetime}",
         ];
-        if ($secure) {
+
+        if ($this->cookieDomain !== null && $this->cookieDomain !== '') {
+            $parts[] = 'Domain=' . $this->cookieDomain;
+        }
+        if ($this->httpOnly) {
+            $parts[] = 'HttpOnly';
+        }
+        if ($effectiveSecure) {
             $parts[] = 'Secure';
         }
+        if ($this->partitioned) {
+            $parts[] = 'Partitioned';
+        }
+
         return implode('; ', $parts);
     }
 
