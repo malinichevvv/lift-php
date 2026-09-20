@@ -9,6 +9,7 @@ use Lift\Exception\MethodNotAllowedException;
 use Lift\Exception\NotFoundException;
 use Lift\Http\Request;
 use Lift\Http\Response;
+use Lift\Http\StringStream;
 use Lift\Pipeline\Pipeline;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -302,6 +303,15 @@ final class Router
         $method = $request->getMethod();
         $path   = '/' . ltrim($request->getUri()->getPath(), '/');
 
+        // RFC 9110 §9.3.2: HEAD is GET without a response body. When no route
+        // was registered for HEAD explicitly, serve it through the GET route
+        // and strip the body — otherwise every HEAD probe (link checkers, SEO
+        // crawlers, uptime monitors) gets a 405 for a perfectly valid page.
+        if ($method === 'HEAD' && !$this->hasRoute('HEAD', $path)) {
+            $response = $this->dispatch($request->withMethod('GET'), $globalMiddleware);
+            return $response->withBody(new StringStream(''));
+        }
+
         // O(1) static fast-path — no regex needed for exact-path routes.
         if (isset($this->static[$method][$path])) {
             $route = $this->static[$method][$path];
@@ -346,6 +356,20 @@ final class Router
     }
 
     /** @return list<string> */
+    /** Whether any registered route (static or dynamic) matches this method + path. */
+    private function hasRoute(string $method, string $path): bool
+    {
+        if (isset($this->static[$method][$path])) {
+            return true;
+        }
+        foreach ($this->routes as $route) {
+            if ($route->matches($method, $path) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private function allowedMethodsFor(string $path): array
     {
         $methods = $this->staticPathMethods[$path] ?? [];

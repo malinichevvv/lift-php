@@ -5,6 +5,10 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Router now serves `HEAD` requests through the matching `GET` route with an empty body (RFC 9110 §9.3.2) instead of returning `405 Method Not Allowed`. An explicitly registered `HEAD` route still takes precedence.
+- `App::run()` now delegates to `App::handle()`, so global middleware runs **before** route matching in both entry points. Previously `run()` only applied global middleware after a route had matched, so middleware could not answer requests the router rejects (CORS preflight, redirects, HEAD).
+
 ## [1.4.0] — 2026-06-10
 
 ### Security

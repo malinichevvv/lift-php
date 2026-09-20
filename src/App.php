@@ -540,17 +540,11 @@ final class App
      */
     public function run(?Request $request = null): void
     {
-        $request ??= Request::fromGlobals();
-        $this->dispatchLifecycle('request.received', $request);
-
-        try {
-            $response = $this->router->dispatch($request, $this->middleware);
-        } catch (\Throwable $e) {
-            $response = $this->handleError($e, $request);
-        }
-
-        $this->dispatchLifecycle('response.sending', $response, $request);
-        $this->emit($response);
+        // Delegate to handle() so run() and handle() behave identically:
+        // global middleware runs *before* route matching in both, which lets
+        // middleware answer requests the router would reject (CORS preflight,
+        // trailing-slash redirects, HEAD, …).
+        $this->emit($this->handle($request ?? Request::fromGlobals()));
     }
 
     /**

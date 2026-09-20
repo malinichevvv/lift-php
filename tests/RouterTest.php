@@ -62,6 +62,31 @@ class RouterTest extends TestCase
             ->dispatch($this->request('POST', 'http://localhost/only-get'));
     }
 
+    public function testHeadFallsBackToGetRouteWithEmptyBody(): void
+    {
+        $this->app->get('/page', fn() => Response::html('<h1>Hello</h1>'));
+        $res = $this->app->handle($this->request('HEAD', 'http://localhost/page'));
+        self::assertSame(200, $res->getStatusCode());
+        self::assertSame('', (string) $res->getBody());
+        self::assertStringContainsString('text/html', $res->getHeaderLine('Content-Type'));
+    }
+
+    public function testExplicitHeadRouteTakesPrecedenceOverGetFallback(): void
+    {
+        $this->app->get('/page', fn() => Response::html('get'));
+        $this->app->map(['HEAD'], '/page', fn() => Response::noContent()->withHeader('X-Head', '1'));
+        $res = $this->app->handle($this->request('HEAD', 'http://localhost/page'));
+        self::assertSame(204, $res->getStatusCode());
+        self::assertSame('1', $res->getHeaderLine('X-Head'));
+    }
+
+    public function testHeadOnUnknownPathIsStillNotFound(): void
+    {
+        $this->expectException(NotFoundException::class);
+        $this->app->container()->make(\Lift\Routing\Router::class)
+            ->dispatch($this->request('HEAD', 'http://localhost/nowhere'));
+    }
+
     public function testRouteGroup(): void
     {
         $this->app->group('/api', function ($g) {
